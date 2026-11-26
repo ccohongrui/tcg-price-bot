@@ -247,10 +247,13 @@ function nbaSuggest(part, limit = 8) {
   return out;
 }
 
+// eBay「已售出」搜尋頁的網址（只是給使用者點開的連結，Worker 不會去抓 eBay）
+const nbaEbayUrl = words => "https://www.ebay.com/sch/i.html?" + new URLSearchParams({ _nkw: words + " PSA 10", LH_Sold: "1", LH_Complete: "1" });
+
 // 使用者輸入 → { Yahoo 搜尋字串, 球員建議清單, 標題必須符合的條件（每一組至少符合一個） }
 function nbaResolve(q) {
   const tokens = q.split(/\s+/).filter(Boolean);
-  if (!tokens.length) return { keyword: "PSA10", names: [], must: [] };
+  if (!tokens.length) return { keyword: "PSA10", names: [], must: [], ebayUrl: nbaEbayUrl("basketball") };
   const part = tokens[0], rest = tokens.slice(1), low = nbaNorm(part);
   let exact = NBA_ENTRIES.filter(e => e[0].toLowerCase() === part.toLowerCase());
   if (!exact.length) exact = NBA_ENTRIES.filter(e => e[1].some(k => low === nbaNorm(k) || low === lastWord(k).toLowerCase()));
@@ -267,7 +270,9 @@ function nbaResolve(q) {
     must = [[nbaNorm(part)]];
   }
   for (const t of rest) must.push([nbaNorm(t)]);
-  return { keyword: ["PSA10", player, ...rest].join(" "), names, must };
+  // eBay 用英文搜尋：挑球員的英文名（沒有就用使用者原本打的字）
+  const english = (kws || []).find(k => /^[ -~]+$/.test(k)) || part;
+  return { keyword: ["PSA10", player, ...rest].join(" "), names, must, ebayUrl: nbaEbayUrl([english, ...rest].join(" ")) };
 }
 
 function nbaStats(items) {
@@ -287,7 +292,7 @@ function nbaStats(items) {
 }
 
 async function nbaSearch(q, page, ctx) {
-  const { keyword, names, must } = nbaResolve(q);
+  const { keyword, names, must, ebayUrl } = nbaResolve(q);
   const params = new URLSearchParams({ p: keyword, auccat: YAHOO_CATEGORY, n: "100", b: String((page - 1) * 100 + 1) });
   const html = await cachedFetch(`${YAHOO}?${params}`, { ttl: SEARCH_TTL, accept: "text/html", ctx, who: "Yahoo! 拍賣" });
   let listing;
@@ -308,7 +313,7 @@ async function nbaSearch(q, page, ctx) {
   }
   items.sort((a, b) => b.soldAt.localeCompare(a.soldAt));
   const total = Number(listing.totalResultsAvailable) || 0;
-  return { query: q, keyword, names, page, items, stats: nbaStats(items),
+  return { query: q, keyword, names, page, ebayUrl, items, stats: nbaStats(items),
            hasMore: items.length > 0 && page * 100 < total && raw.length >= 100 };
 }
 

@@ -449,13 +449,19 @@ def nba_norm(text):
     return re.sub(r"[\s・･.\-]", "", text).lower()
 
 
+def nba_ebay_url(words):
+    """eBay「已售出」搜尋頁的網址（只是給使用者點開的連結，本程式不會去抓 eBay）"""
+    return "https://www.ebay.com/sch/i.html?" + urllib.parse.urlencode(
+        {"_nkw": words + " PSA 10", "LH_Sold": 1, "LH_Complete": 1})
+
+
 def nba_resolve(q):
-    """使用者輸入 → (Yahoo 搜尋字串, 球員建議清單, 標題必須符合的條件)
+    """使用者輸入 → (Yahoo 搜尋字串, 球員建議清單, 標題必須符合的條件, eBay 已售出搜尋網址)
 
     條件是「每一組至少符合一個」的清單，用來濾掉 Yahoo 在結果太少時塞進來的不相關商品。"""
     tokens = q.split()
     if not tokens:
-        return "PSA10", [], []
+        return "PSA10", [], [], nba_ebay_url("basketball")
     part, rest = tokens[0], tokens[1:]
     low = nba_norm(part)
     exact = [e for e in NBA_ENTRIES if e[0].lower() == part.lower()] or \
@@ -471,7 +477,9 @@ def nba_resolve(q):
     else:
         player, must = part, [[nba_norm(part)]]
     must += [[nba_norm(t)] for t in rest]
-    return " ".join(["PSA10", player] + rest), names, must
+    # eBay 用英文搜尋：挑球員的英文名（沒有就用使用者原本打的字）
+    english = next((k for k in (kws or []) if k.isascii()), part)
+    return " ".join(["PSA10", player] + rest), names, must, nba_ebay_url(" ".join([english] + rest))
 
 
 def nba_stats(items):
@@ -495,7 +503,7 @@ def nba_stats(items):
 
 
 def nba_search(q, page=1):
-    keyword, names_, must = nba_resolve(q)
+    keyword, names_, must, ebay = nba_resolve(q)
     key = f"nba:{page}:{keyword}"
     res = cache.get(key)
     if res is None:
@@ -523,7 +531,7 @@ def nba_search(q, page=1):
         total = int(listing.get("totalResultsAvailable") or 0)
         res = {"items": items, "hasMore": bool(items) and page * 100 < total and len(raw) >= 100}
         cache.set(key, res, SEARCH_TTL)
-    return {"query": q, "keyword": keyword, "names": names_, "page": page,
+    return {"query": q, "keyword": keyword, "names": names_, "page": page, "ebayUrl": ebay,
             "items": res["items"], "stats": nba_stats(res["items"]), "hasMore": res["hasMore"]}
 
 
@@ -578,7 +586,7 @@ class Handler(BaseHTTPRequestHandler):
         if u.path in ("/api/nba", "/api/nba/suggest"):
             text = " ".join(arg("q")[:80].split())
             if u.path == "/api/nba/suggest":
-                keyword, names_, _ = nba_resolve(text)
+                keyword, names_, _, _ = nba_resolve(text)
                 try:
                     items = nba_search(text)["items"][:5]
                 except UpstreamError:
