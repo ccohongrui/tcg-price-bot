@@ -1,0 +1,8 @@
+name = "tcg-price-api"
+main = "src/index.js"
+compatibility_date = "2026-01-01"
+workers_dev = true
+
+[vars]
+# 允許呼叫這支 API 的網頁來源（逗號分隔）。本機 localhost / 127.0.0.1 一律允許。
+ALLOWED_ORIGINS = "https://ccohongrui.github.io"

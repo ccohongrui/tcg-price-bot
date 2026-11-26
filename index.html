@@ -1,0 +1,696 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>卡價 KAKAKU｜日版 PSA10 查價</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&family=Noto+Serif+TC:wght@500;700;900&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#fbfaf7; --panel:#ffffff; --ink:#111111; --muted:#6d6a62; --soft:#dedad0;
+    --accent:#c9b27c; --accent-soft:#efe7d3; --dot:#e4e0d6; --up:#b3261e; --down:#1a7f4b;
+    --serif:"Noto Serif TC","Songti TC","PMingLiU",serif;
+    --sans:"Noto Sans TC","Microsoft JhengHei","PingFang TC",system-ui,sans-serif;
+  }
+  [data-theme=dark]{
+    --bg:#121210; --panel:#1b1b18; --ink:#f2efe8; --muted:#a09c91; --soft:#3a3833;
+    --accent:#b39a5f; --accent-soft:#2e2a1f; --dot:#262521; --up:#ff8a80; --down:#6fd39b;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{margin:0;color:var(--ink);font:15px/1.6 var(--sans);
+    background:var(--bg) radial-gradient(var(--dot) 1px,transparent 1.2px) 0 0/22px 22px;min-height:100vh}
+  a{color:inherit}
+  button{font:inherit;color:inherit;cursor:pointer}
+  h1,h2,h3{font-family:var(--serif);margin:0;font-weight:700;text-wrap:balance}
+  .num{font-variant-numeric:tabular-nums}
+
+  /* ── 頂部導覽 ── */
+  header.top{position:sticky;top:0;z-index:30;background:var(--bg);border-bottom:1px solid var(--ink)}
+  .top-in{max-width:1240px;margin:0 auto;padding:0 20px;height:68px;display:flex;align-items:center;gap:22px}
+  .brand{display:flex;align-items:center;gap:10px;text-decoration:none;flex:none}
+  .brand b{width:42px;height:42px;background:var(--ink);color:var(--bg);display:grid;place-items:center;
+    font:900 24px var(--serif)}
+  .brand span{font-size:11px;letter-spacing:.32em;font-weight:500}
+  nav.tabs{display:flex;align-self:stretch;gap:0;overflow-x:auto;scrollbar-width:none;flex:1;border-left:1px dotted var(--ink);padding-left:14px}
+  nav.tabs::-webkit-scrollbar{display:none}
+  nav.tabs a{display:flex;align-items:center;gap:8px;padding:0 18px;margin:13px 0;text-decoration:none;white-space:nowrap;
+    border:1px solid transparent;font-weight:500}
+  nav.tabs a:hover{border-color:var(--ink)}
+  nav.tabs a.on{background:var(--accent);border-color:var(--ink);color:#111;font-weight:700}
+  nav.tabs svg{width:18px;height:18px;flex:none}
+  .top-r{display:flex;align-items:center;gap:10px;flex:none}
+  .rate{font-size:12px;color:var(--muted);white-space:nowrap}
+  .sq{width:40px;height:40px;border:1px solid var(--ink);background:var(--panel);display:grid;place-items:center;padding:0}
+  .sq:hover{background:var(--accent-soft)}
+  .sq svg{width:18px;height:18px}
+
+  main{max-width:1240px;margin:0 auto;padding:0 20px 80px}
+
+  /* ── 主搜尋區 ── */
+  .hero{padding:72px 0 44px;max-width:840px;margin:0 auto}
+  .hero.small{padding:36px 0 26px;max-width:none}
+  .eyebrow{font-size:13px;color:var(--muted);letter-spacing:.08em;margin-bottom:6px}
+  .hero h1{font-size:clamp(28px,4.2vw,40px);line-height:1.3;margin-bottom:22px}
+  .hero.small h1{font-size:30px;margin-bottom:16px}
+  .search{position:relative}
+  .sbox{display:flex;border:1px solid var(--ink);background:var(--panel)}
+  .sbox:focus-within{outline:2px solid var(--accent);outline-offset:2px}
+  .sbox select{font:inherit;color:inherit;border:0;border-right:1px solid var(--ink);background:var(--accent-soft);padding:0 12px;font-weight:700;cursor:pointer}
+  .sbox input{flex:1;min-width:0;font:inherit;font-size:17px;color:inherit;background:transparent;border:0;outline:0;padding:18px 16px}
+  .sbox input::placeholder{color:var(--muted)}
+  .sbox button{border:0;border-left:1px solid var(--ink);background:var(--ink);color:var(--bg);padding:0 26px;font-weight:700;letter-spacing:.1em}
+  .sbox button:hover{background:var(--accent);color:#111}
+  .hint{font-size:12px;color:var(--muted);margin-top:8px}
+  .chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}
+  .chip{border:1px solid var(--ink);background:var(--panel);padding:6px 14px;font-size:14px;text-decoration:none}
+  .chip:hover{background:var(--accent)}
+  .chip small{color:var(--muted);margin-left:6px}
+  .chip:hover small{color:#333}
+
+  /* ── 自動完成下拉 ── */
+  .drop{position:absolute;left:0;right:0;top:calc(100% + 6px);z-index:20;background:var(--panel);border:1px solid var(--ink);
+    box-shadow:6px 6px 0 var(--ink);max-height:min(70vh,560px);overflow:auto;display:none}
+  .drop.open{display:block}
+  .drop h4{margin:0;padding:8px 14px;font:500 12px var(--sans);color:var(--muted);letter-spacing:.1em;border-bottom:1px dotted var(--soft);background:var(--bg)}
+  .opt{display:flex;align-items:center;gap:12px;padding:9px 14px;cursor:pointer;border-bottom:1px solid var(--soft)}
+  .opt:last-child{border-bottom:0}
+  .opt.act,.opt:hover{background:var(--accent-soft)}
+  .opt img{width:42px;height:56px;object-fit:cover;flex:none;background:var(--bg)}
+  .opt .t{font-weight:700;line-height:1.35}
+  .opt .s{font-size:12px;color:var(--muted);line-height:1.4}
+  .opt .go{margin-left:auto;font-size:12px;color:var(--muted);white-space:nowrap}
+  .drop .msg{padding:14px;color:var(--muted);font-size:13px}
+
+  /* ── 區塊與卡片格 ── */
+  section.blk{margin-top:44px}
+  .blk-h{display:flex;align-items:baseline;gap:12px;border-bottom:1px solid var(--ink);padding-bottom:10px;margin-bottom:18px}
+  .blk-h h2{font-size:21px}
+  .blk-h .sub{font-size:13px;color:var(--muted)}
+  .blk-h .more{margin-left:auto;font-size:13px;text-decoration:none;border-bottom:1px solid var(--ink)}
+  .blk-h .more:hover{background:var(--accent)}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(168px,1fr));gap:16px}
+  .tile{display:flex;flex-direction:column;background:var(--panel);border:1px solid var(--ink);text-decoration:none;
+    transition:transform .12s,box-shadow .12s}
+  .tile:hover{transform:translate(-3px,-3px);box-shadow:5px 5px 0 var(--ink)}
+  .tile .pic{aspect-ratio:63/80;background:var(--bg);border-bottom:1px solid var(--ink);overflow:hidden;padding:8px 0}
+  .tile .pic img{width:100%;height:100%;object-fit:cover;display:block}
+  .tile .inf{padding:10px 12px 12px;display:flex;flex-direction:column;gap:2px;flex:1}
+  .tile .t{font-weight:700;font-size:14px;line-height:1.4;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+  .tile .s{font-size:11.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .tile .p{margin-top:auto;padding-top:8px;display:flex;align-items:baseline;gap:6px;flex-wrap:wrap}
+  .tile .p b{font:700 17px var(--serif)}
+  .tile .p i{font-style:normal;font-size:11px;color:var(--muted)}
+  .tag{font-size:10.5px;border:1px solid var(--ink);padding:0 5px;line-height:1.6;font-weight:700;background:var(--accent);color:#111}
+  .chg{font-size:11.5px;font-weight:700}
+  .chg.up{color:var(--up)} .chg.down{color:var(--down)}
+  .ph{display:inline-block;height:1em;width:80px;background:linear-gradient(90deg,var(--soft),var(--bg),var(--soft));background-size:200% 100%;animation:sh 1.2s infinite linear}
+  @keyframes sh{to{background-position:-200% 0}}
+  .tile.sk .pic{animation:sh 1.2s infinite linear;background:linear-gradient(90deg,var(--bg),var(--soft),var(--bg));background-size:200% 100%}
+  .empty{border:1px dashed var(--ink);padding:28px;text-align:center;color:var(--muted);background:var(--panel)}
+  .err{border:1px solid var(--up);color:var(--up);padding:16px;background:var(--panel)}
+  .btn{display:inline-block;border:1px solid var(--ink);background:var(--panel);padding:10px 26px;font-weight:700;text-decoration:none}
+  .btn:hover{background:var(--accent);color:#111}
+  .btn.dark{background:var(--ink);color:var(--bg)}
+  .center{text-align:center;margin-top:24px}
+
+  /* ── 單卡頁 ── */
+  .crumb{padding:22px 0 16px;font-size:13px;color:var(--muted)}
+  .crumb a{text-decoration:none;border-bottom:1px solid var(--muted)}
+  .crumb a:hover{color:var(--ink);border-color:var(--ink)}
+  .detail{display:grid;grid-template-columns:minmax(240px,340px) 1fr;gap:28px;align-items:start}
+  .detail>*{min-width:0}
+  .dpic{border:1px solid var(--ink);background:var(--panel);padding:16px;position:sticky;top:88px}
+  .dpic img{width:100%;aspect-ratio:5/6.6;object-fit:cover;display:block}
+  .dpic .btn{display:block;text-align:center;margin-top:16px}
+  .dhead h1{font-size:clamp(24px,3vw,32px);line-height:1.35}
+  .dhead .ja{color:var(--muted);margin-top:4px}
+  .meta{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+  .meta span{border:1px solid var(--ink);padding:2px 10px;font-size:12.5px;background:var(--panel);max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .panel{border:1px solid var(--ink);background:var(--panel);margin-top:20px}
+  .panel-h{display:flex;flex-wrap:wrap;align-items:center;gap:10px 16px;padding:12px 16px;border-bottom:1px solid var(--ink)}
+  .pill{background:var(--accent);color:#111;border:1px solid var(--ink);padding:3px 14px;font-weight:700;font-size:14px}
+  .badge{margin-left:auto;background:var(--ink);color:var(--bg);padding:3px 14px;font-weight:700;font-size:14px}
+  .stats{display:grid;grid-template-columns:1.5fr 1fr 1fr 1fr}
+  .stat{padding:16px;border-right:1px solid var(--soft)}
+  .stat:last-child{border-right:0}
+  .stat .k{font-size:12.5px;color:var(--muted)}
+  .stat .v{font:700 24px/1.3 var(--serif)}
+  .stat.main .v{font-size:38px;font-weight:900}
+  .stat .v small{font:500 13px var(--sans);margin-left:4px}
+  .stat .j{font-size:12.5px;color:var(--muted)}
+  .ranges{display:flex;margin-left:auto}
+  .ranges button{border:1px solid var(--ink);border-left-width:0;background:var(--panel);padding:3px 12px;font-size:13px}
+  .ranges button:first-child{border-left-width:1px}
+  .ranges button.on{background:var(--ink);color:var(--bg)}
+  .chart{position:relative;padding:14px 12px 6px}
+  .chart svg{display:block;width:100%;height:280px;overflow:visible}
+  .chart text{font:11px var(--sans);fill:var(--muted)}
+  .tip{position:absolute;pointer-events:none;background:var(--ink);color:var(--bg);padding:6px 10px;font-size:12.5px;line-height:1.5;white-space:nowrap;display:none;z-index:2}
+  .tip b{font-size:14px}
+  .vol{display:flex;align-items:flex-end;gap:10px;padding:18px 16px 14px;overflow-x:auto}
+  .vol .col{flex:1;min-width:38px;max-width:90px;display:flex;flex-direction:column;align-items:center;gap:4px;font-size:12px}
+  .vol .bar{width:100%;background:var(--accent);border:1px solid var(--ink)}
+  .vol .d{color:var(--muted)}
+  table.tr{width:100%;border-collapse:collapse}
+  table.tr th{font-weight:500;font-size:12.5px;color:var(--muted);text-align:left;padding:8px 16px;border-bottom:1px solid var(--soft)}
+  table.tr td{padding:9px 16px;border-bottom:1px solid var(--soft)}
+  table.tr tr:last-child td{border-bottom:0}
+  table.tr .r{text-align:right}
+  .note{font-size:12px;color:var(--muted);padding:10px 16px;border-top:1px dotted var(--soft)}
+
+  footer{max-width:1240px;margin:0 auto;padding:22px 20px 40px;border-top:1px dotted var(--ink);font-size:12px;color:var(--muted)}
+
+  @media (max-width:820px){
+    .top-in{height:auto;flex-wrap:wrap;padding:10px 14px 0;gap:10px}
+    .brand span,.rate{display:none}
+    .top-r{margin-left:auto}
+    nav.tabs{order:3;flex-basis:100%;border-left:0;padding-left:0;border-top:1px dotted var(--ink)}
+    nav.tabs a{margin:8px 0;padding:8px 14px}
+    main{padding:0 14px 60px}
+    .hero{padding:36px 0 26px}
+    .detail{grid-template-columns:1fr}
+    .dpic{position:static;max-width:300px;margin:0 auto}
+    .stats{grid-template-columns:1fr 1fr 1fr}
+    .stat.main{grid-column:1/-1;border-right:0;border-bottom:1px solid var(--soft)}
+    .stat{padding:12px 10px}
+    .stat .v{font-size:18px}
+    .stat .v small{display:none}
+    .ranges{margin-left:0;flex-basis:100%}
+    .ranges button{flex:1;padding:5px 0}
+    table.tr th,table.tr td{padding:8px 10px}
+    .grid{grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:12px}
+    .sbox button{padding:0 16px}
+  }
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="top-in">
+    <a class="brand" href="#/" aria-label="回首頁"><b>卡</b><span>KAKAKU</span></a>
+    <nav class="tabs" id="tabs">
+      <a href="#/" data-tab="home"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg>首頁</a>
+      <a href="#/g/onepiece" data-tab="onepiece">航海王</a>
+      <a href="#/g/pokemon" data-tab="pokemon">寶可夢</a>
+      <a href="#/g/yugioh" data-tab="yugioh">遊戲王</a>
+    </nav>
+    <div class="top-r">
+      <span class="rate num" id="rate"></span>
+      <button class="sq" id="theme" title="切換深色 / 淺色" aria-label="切換深色或淺色">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1"/></svg>
+      </button>
+    </div>
+  </div>
+</header>
+
+<main id="app"></main>
+<footer>資料來源：SNKRDUNK（スニダン）日版 PSA10 成交紀錄，台幣為匯率換算，僅供參考。</footer>
+
+<script>
+"use strict";
+/* 放在 GitHub Pages 等靜態空間時，資料改向這支 Cloudflare Worker 要（部署後填入網址）。
+   用 start.bat 在本機開（埠號 8765 起）時不會用到它。 */
+const WORKER_URL = "";
+const IS_LOCAL_SERVER = /^(localhost|127\.0\.0\.1)$/.test(location.hostname) && +location.port >= 8765 && +location.port <= 8774;
+const API_BASE = IS_LOCAL_SERVER ? "" : WORKER_URL.replace(/\/+$/, "");
+const GAMES = {onepiece:"航海王", pokemon:"寶可夢", yugioh:"遊戲王"};
+const EXAMPLES = {
+  onepiece:["魯夫","索隆","娜美","紅髮傑克","OP05-119"],
+  pokemon:["月亮伊布","噴火龍","皮卡丘","莉莉艾","sv8a 217"],
+  yugioh:["青眼白龍","黑魔導女孩","灰流麗","真紅眼黑龍","QCCU-JP001"],
+};
+const PLACEHOLDER = {
+  onepiece:"輸入中文卡名或卡號，例如：魯夫、OP05-119",
+  pokemon:"輸入中文卡名或卡號，例如：月亮伊布、sv8a 217",
+  yugioh:"輸入中文卡名或卡號，例如：青眼白龍、QCCU-JP001",
+};
+let rate = 0.21;
+
+/* ── 小工具 ── */
+const $ = (s, el=document) => el.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const fmt = n => Math.round(n).toLocaleString("en-US");
+const twd = jpy => jpy == null ? "—" : fmt(jpy * rate);
+const yen = jpy => jpy == null ? "—" : "¥" + fmt(jpy);
+const img = (url, size) => url ? url.split("?")[0] + (size ? "?size=" + size : "") : "";
+const store = {
+  get(k, d){ try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch(e){ return d; } },
+  set(k, v){ try { localStorage.setItem(k, JSON.stringify(v)); } catch(e){} },
+};
+async function api(path, params){
+  let res;
+  if (!IS_LOCAL_SERVER && !API_BASE) throw new Error("尚未設定資料來源：請用 start.bat 開啟，或在 index.html 填入 WORKER_URL");
+  try { res = await fetch(API_BASE + path + "?" + new URLSearchParams(params)); }
+  catch(e){ throw new Error(IS_LOCAL_SERVER ? "連不到本機伺服器，請確認黑色視窗（start.bat）還開著" : "連不到資料伺服器，請稍後再試"); }
+  let data = null;
+  try { data = await res.json(); } catch(e){}
+  if (!res.ok || !data) throw new Error((data && data.error) || ("伺服器錯誤 " + res.status));
+  return data;
+}
+function when(iso){
+  const d = new Date(iso);
+  if (isNaN(d)) return "";
+  const p = n => String(n).padStart(2, "0");
+  return `${d.getMonth()+1}/${d.getDate()} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
+/* ── 最近紀錄（存在瀏覽器） ── */
+function rememberCard(c){
+  const list = store.get("viewed", []).filter(x => x.id !== c.id);
+  list.unshift({id:c.id, name:c.name, title:c.title, zh:c.zh, number:c.number, image:c.image, game:c.game,
+                last:c.psa10 ? c.psa10.last : null, at:Date.now()});
+  store.set("viewed", list.slice(0, 12));
+}
+function rememberQuery(game, q){
+  const list = store.get("queries", []).filter(x => !(x.game === game && x.q === q));
+  list.unshift({game, q});
+  store.set("queries", list.slice(0, 10));
+}
+
+/* ── PSA10 價格：卡片進到畫面才去抓，一次最多 3 個請求 ── */
+const priceCache = new Map();
+const queue = []; let running = 0;
+function pump(){
+  while (running < 3 && queue.length){
+    const job = queue.shift(); running++;
+    job().finally(() => { running--; pump(); });
+  }
+}
+function getPrice(id){
+  if (!priceCache.has(id)){
+    priceCache.set(id, new Promise(resolve => {
+      queue.push(() => api("/api/card", {id, lite:1}).then(c => resolve(c.psa10), () => { priceCache.delete(id); resolve(null); }));
+      pump();
+    }));
+  }
+  return priceCache.get(id);
+}
+function priceHTML(p){
+  if (!p) return `<i>暫時讀不到價格</i>`;
+  if (p.last == null) return `<i>尚無 PSA10 成交</i>`;
+  const c = p.change30;
+  const chg = c == null || c === 0 ? "" : `<span class="chg ${c > 0 ? "up" : "down"}" title="近 30 天均價變化">${c > 0 ? "▲" : "▼"}${Math.abs(c)}%</span>`;
+  return `<b class="num">NT$${twd(p.last)}</b>${chg}<i class="num" style="flex-basis:100%">${yen(p.last)}</i>`;
+}
+const io = new IntersectionObserver(entries => {
+  for (const e of entries){
+    if (!e.isIntersecting) continue;
+    io.unobserve(e.target);
+    const el = e.target;
+    getPrice(+el.dataset.id).then(p => { if (el.isConnected) $(".p", el).innerHTML = `<span class="tag">PSA10</span>` + priceHTML(p); });
+  }
+}, {rootMargin:"200px"});
+
+function tileHTML(c){
+  const sub = [c.number, c.zh ? c.title : ""].filter(Boolean).join(" · ");
+  return `<a class="tile" href="#/card/${c.id}" data-id="${c.id}">
+    <div class="pic">${c.image ? `<img src="${esc(img(c.image, "l"))}" alt="${esc(c.zh || c.title || c.name)}" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">` : ""}</div>
+    <div class="inf">
+      <div class="t">${esc(c.zh || c.title || c.name)}</div>
+      <div class="s" title="${esc(c.name || "")}">${esc(sub)}</div>
+      <div class="p"><span class="tag">PSA10</span><span class="ph"></span></div>
+    </div></a>`;
+}
+function fillGrid(el, cards, append){
+  if (!append) el.innerHTML = "";
+  el.insertAdjacentHTML("beforeend", cards.map(tileHTML).join(""));
+  el.querySelectorAll(".tile:not([data-w])").forEach(t => { t.dataset.w = 1; io.observe(t); });
+}
+const skeleton = n => Array.from({length:n}, () => `<div class="tile sk"><div class="pic"></div><div class="inf"><div class="t"><span class="ph" style="width:70%"></span></div><div class="p"><span class="ph"></span></div></div></div>`).join("");
+
+/* ── 搜尋框 + 自動完成 ── */
+function searchHTML(game, value, withSelect){
+  const sel = withSelect ? `<select id="sgame" aria-label="卡種">${Object.entries(GAMES).map(([k,v]) => `<option value="${k}"${k===game?" selected":""}>${v}</option>`).join("")}</select>` : "";
+  return `<form class="search" id="sform" autocomplete="off">
+    <div class="sbox">${sel}
+      <input id="sq" type="text" value="${esc(value || "")}" placeholder="${esc(PLACEHOLDER[game])}" aria-label="搜尋卡片" enterkeyhint="search" spellcheck="false">
+      <button type="submit">查價</button>
+    </div>
+    <div class="drop" id="drop"></div>
+  </form>`;
+}
+function wireSearch(initialGame){
+  const form = $("#sform"), input = $("#sq"), drop = $("#drop"), sel = $("#sgame");
+  let game = initialGame, seq = 0, timer = 0, composing = false, act = -1, opts = [];
+  const close = () => { drop.classList.remove("open"); act = -1; };
+  const go = q => { q = q.trim(); if (!q) return; close(); rememberQuery(game, q); location.hash = `#/g/${game}?q=${encodeURIComponent(q)}`; };
+
+  function paint(d){
+    const q = d.query;
+    let h = "";
+    if (d.names.length){
+      h += `<h4>卡名</h4>` + d.names.map(n => {
+        const full = q.split(/\s+/).slice(1).join(" ");
+        return `<div class="opt" data-q="${esc((n.zh + " " + full).trim())}"><div><div class="t">${esc(n.zh)}</div><div class="s">${esc(n.ja)}</div></div><span class="go">看全部 →</span></div>`;
+      }).join("");
+    }
+    if (d.cards.length){
+      h += `<h4>卡片（點一下直接看 PSA10 行情）</h4>` + d.cards.map(c =>
+        `<div class="opt" data-id="${c.id}">${c.image ? `<img src="${esc(img(c.image, "s"))}" alt="" referrerpolicy="no-referrer">` : ""}
+          <div><div class="t">${esc(c.zh || c.title)}</div><div class="s">${esc([c.number, c.zh ? c.title : "", c.series].filter(Boolean).join(" · "))}</div></div></div>`).join("");
+    }
+    if (!h) h = `<div class="msg">找不到「${esc(q)}」的${GAMES[game]}卡。可以改用卡號（最準）或日文卡名。</div>`;
+    drop.innerHTML = h; drop.classList.add("open");
+    opts = [...drop.querySelectorAll(".opt")]; act = -1;
+  }
+  function ask(){
+    clearTimeout(timer);
+    const q = input.value.trim();
+    if (!q){ close(); return; }
+    timer = setTimeout(async () => {
+      const my = ++seq;
+      drop.innerHTML = `<div class="msg">搜尋中…</div>`; drop.classList.add("open");
+      try {
+        const d = await api("/api/suggest", {game, q});
+        if (my === seq && document.activeElement === input) paint(d);
+      } catch(e){
+        if (my === seq) drop.innerHTML = `<div class="msg">${esc(e.message)}</div>`;
+      }
+    }, 280);
+  }
+  const pick = el => { if (el.dataset.id) { close(); location.hash = "#/card/" + el.dataset.id; } else { input.value = el.dataset.q; go(el.dataset.q); } };
+
+  input.addEventListener("compositionstart", () => composing = true);
+  input.addEventListener("compositionend", () => { composing = false; ask(); });
+  input.addEventListener("input", () => { if (!composing) ask(); });
+  input.addEventListener("focus", () => { if (input.value.trim() && drop.innerHTML) drop.classList.add("open"); });
+  input.addEventListener("keydown", e => {
+    if (composing || e.isComposing) return;
+    if (e.key === "Escape") return close();
+    if (!drop.classList.contains("open") || !opts.length) return;
+    if (e.key === "ArrowDown" || e.key === "ArrowUp"){
+      e.preventDefault();
+      act = (act + (e.key === "ArrowDown" ? 1 : -1) + opts.length + 1) % (opts.length + 1);
+      opts.forEach((o, i) => o.classList.toggle("act", i === act));
+      if (opts[act]) opts[act].scrollIntoView({block:"nearest"});
+    } else if (e.key === "Enter" && opts[act]){ e.preventDefault(); pick(opts[act]); }
+  });
+  drop.addEventListener("mousedown", e => { const o = e.target.closest(".opt"); if (o){ e.preventDefault(); pick(o); } });
+  form.addEventListener("submit", e => { e.preventDefault(); seq++; clearTimeout(timer); go(input.value); });
+  document.addEventListener("mousedown", e => { if (!form.contains(e.target)) close(); }, {signal: viewAbort.signal});
+  if (sel) sel.addEventListener("change", () => {
+    game = sel.value; store.set("lastGame", game);
+    input.placeholder = PLACEHOLDER[game];
+    $("#ex").innerHTML = exampleChips(game);
+    input.focus(); ask();
+  });
+}
+const exampleChips = game => EXAMPLES[game].map(q => `<a class="chip" href="#/g/${game}?q=${encodeURIComponent(q)}">${esc(q)}</a>`).join("");
+
+/* ── 首頁 ── */
+function viewHome(app){
+  const game = GAMES[store.get("lastGame")] ? store.get("lastGame") : "pokemon";
+  const viewed = store.get("viewed", []), queries = store.get("queries", []);
+  app.innerHTML = `
+    <div class="hero">
+      <div class="eyebrow">日版 · PSA10 · SNKRDUNK 成交行情</div>
+      <h1>今天，想查哪張卡的價格？</h1>
+      ${searchHTML(game, "", true)}
+      <div class="hint">打幾個中文字就會跳出對應的卡，點圖片就能看 PSA10 最近成交價與走勢。</div>
+      <div class="chips" id="ex">${exampleChips(game)}</div>
+    </div>
+    <section class="blk">
+      <div class="blk-h"><h2>最近查看的卡片</h2><span class="sub">${viewed.length ? "點卡片看最新行情" : ""}</span>
+        ${viewed.length ? `<a class="more" href="#" id="clr">清除紀錄</a>` : ""}</div>
+      ${viewed.length ? `<div class="grid" id="viewed"></div>` : `<div class="empty">還沒有查過卡片。上面搜尋一張試試，查過的卡會出現在這裡。</div>`}
+    </section>
+    ${queries.length ? `<section class="blk"><div class="blk-h"><h2>最近搜尋</h2></div>
+      <div class="chips" style="margin-top:0">${queries.map(x => `<a class="chip" href="#/g/${x.game}?q=${encodeURIComponent(x.q)}">${esc(x.q)}<small>${GAMES[x.game] || ""}</small></a>`).join("")}</div></section>` : ""}
+    ${Object.entries(GAMES).map(([g, label]) => `<section class="blk">
+      <div class="blk-h"><h2>${label}熱門卡片</h2><span class="sub">SNKRDUNK 人氣排行</span><a class="more" href="#/g/${g}">看更多 →</a></div>
+      <div class="grid" id="hot-${g}">${skeleton(6)}</div></section>`).join("")}`;
+  wireSearch(game);
+  if (viewed.length){
+    fillGrid($("#viewed"), viewed);
+    $("#clr").addEventListener("click", e => { e.preventDefault(); store.set("viewed", []); store.set("queries", []); route(); });
+  }
+  const token = viewToken;
+  (async () => {
+    for (const g of Object.keys(GAMES)){
+      const el = $("#hot-" + g);
+      try {
+        const d = await api("/api/hot", {game:g});
+        if (token !== viewToken) return;
+        d.cards.length ? fillGrid(el, d.cards.slice(0, 6)) : el.outerHTML = `<div class="empty">目前抓不到排行</div>`;
+      } catch(e){
+        if (token !== viewToken) return;
+        el.outerHTML = `<div class="err">${esc(e.message)}</div>`;
+      }
+    }
+  })();
+}
+
+/* ── 卡種頁（搜尋結果 / 熱門） ── */
+function viewGame(app, game, q){
+  store.set("lastGame", game);
+  app.innerHTML = `
+    <div class="hero small">
+      <div class="eyebrow">日版 · PSA10 行情</div>
+      <h1>${GAMES[game]}</h1>
+      ${searchHTML(game, q, false)}
+      <div class="chips" id="ex">${exampleChips(game)}</div>
+    </div>
+    <section class="blk" style="margin-top:8px">
+      <div class="blk-h"><h2>${q ? `「${esc(q)}」的搜尋結果` : "熱門卡片"}</h2><span class="sub" id="cnt">${q ? "" : "SNKRDUNK 人氣排行"}</span></div>
+      <div class="chips" id="alts" style="margin:0 0 16px"></div>
+      <div class="grid" id="res">${skeleton(12)}</div>
+      <div class="center" id="more"></div>
+    </section>`;
+  wireSearch(game);
+  const token = viewToken, res = $("#res");
+  let page = 1, total = 0; const shown = new Set();
+  async function load(){
+    try {
+      const d = q ? await api("/api/search", {game, q, page}) : await api("/api/hot", {game});
+      if (token !== viewToken) return;
+      if (page === 1 && !d.cards.length){
+        res.outerHTML = `<div class="empty">找不到「${esc(q)}」的${GAMES[game]}日版卡。<br>試試只打角色名的前幾個字，或直接輸入卡號（例如 ${esc(EXAMPLES[game][4])}）。</div>`;
+      } else {
+        const fresh = d.cards.filter(c => !shown.has(c.id) && shown.add(c.id));
+        fillGrid(res, fresh, page > 1);
+        total += fresh.length;
+      }
+      if (q){
+        $("#cnt").textContent = total ? `已顯示 ${total} 張${d.keyword && d.keyword !== q ? ` · 以「${d.keyword}」搜尋` : ""}` : "";
+        if (page === 1 && d.names && d.names.length > 1)
+          $("#alts").innerHTML = `<span style="align-self:center;font-size:13px;color:var(--muted)">你是不是要找：</span>` +
+            d.names.map(n => `<a class="chip" href="#/g/${game}?q=${encodeURIComponent(n.zh)}">${esc(n.zh)}<small>${esc(n.ja)}</small></a>`).join("");
+        $("#more").innerHTML = d.hasMore ? `<button class="btn" id="mb">載入更多</button>` : "";
+        if (d.hasMore) $("#mb").addEventListener("click", () => { page++; $("#mb").disabled = true; $("#mb").textContent = "載入中…"; load(); });
+      }
+    } catch(e){
+      if (token !== viewToken) return;
+      if (page === 1) res.outerHTML = `<div class="err">${esc(e.message)}</div>`;
+      else $("#more").innerHTML = `<div class="err">${esc(e.message)}</div>`;
+    }
+  }
+  load();
+}
+
+/* ── 單卡頁 ── */
+const RANGES = [["1M","1 個月",30],["3M","3 個月",91],["6M","6 個月",183],["1Y","1 年",365],["ALL","全部",0]];
+async function viewCard(app, id){
+  app.innerHTML = `<div class="crumb"><a href="#/">首頁</a> ／ 讀取中…</div>
+    <div class="detail"><div class="dpic"><div class="tile sk" style="border:0"><div class="pic"></div></div></div>
+    <div><h1><span class="ph" style="width:60%"></span></h1><div class="panel" style="padding:40px;text-align:center;color:var(--muted)">正在向 SNKRDUNK 讀取 PSA10 成交紀錄…</div></div></div>`;
+  const token = viewToken;
+  let c;
+  try { c = await api("/api/card", {id}); }
+  catch(e){
+    if (token !== viewToken) return;
+    app.innerHTML = `<div class="crumb"><a href="#/">← 回首頁</a></div><div class="err">${esc(e.message)}</div>`;
+    return;
+  }
+  if (token !== viewToken) return;
+  rememberCard(c);
+  priceCache.set(c.id, Promise.resolve(c.psa10));
+  setTab(c.game);
+  const p = c.psa10, has = p.last != null;
+  const label = GAMES[c.game];
+  const big = (k, v, cls="") => `<div class="stat ${cls}"><div class="k">${k}</div><div class="v num">${v == null ? "—" : twd(v)}<small>${v == null ? "" : "TWD"}</small></div><div class="j num">${v == null ? "" : yen(v)}</div></div>`;
+  const days = {};
+  for (const t of c.trades){
+    const d = new Date(t.soldAt); if (isNaN(d)) continue;
+    const k = d.getFullYear() * 10000 + (d.getMonth() + 1) * 100 + d.getDate();
+    (days[k] = days[k] || {n:0, label:`${d.getMonth()+1}/${d.getDate()}`}).n++;
+  }
+  const dayList = Object.keys(days).sort().map(k => days[k]);
+  const maxN = Math.max(1, ...dayList.map(d => d.n));
+
+  app.innerHTML = `
+    <div class="crumb"><a href="#/">首頁</a> ／ ${label ? `<a href="#/g/${c.game}">${label}</a> ／ ` : ""}${esc(c.zh || c.title)}</div>
+    <div class="detail">
+      <div class="dpic">
+        ${c.image ? `<img src="${esc(img(c.image))}" alt="${esc(c.zh || c.title)}" referrerpolicy="no-referrer">` : ""}
+        <a class="btn dark" href="${esc(c.url)}" target="_blank" rel="noopener">到 SNKRDUNK 看這張卡 ↗</a>
+      </div>
+      <div>
+        <div class="dhead">
+          <h1>${esc(c.zh || c.title)}</h1>
+          ${c.zh ? `<div class="ja">${esc(c.title)}</div>` : ""}
+          <div class="meta">
+            ${c.number ? `<span>卡號 ${esc(c.number)}</span>` : ""}
+            ${c.series ? `<span>${esc(c.series)}</span>` : ""}
+            ${c.releasedAt ? `<span>發售 ${esc(c.releasedAt)}</span>` : ""}
+            <span>日版 · PSA10</span>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-h"><span class="pill">SNKRDUNK PSA 10 近期成交紀錄</span>
+            ${has && p.days ? `<span class="badge num">${p.days} 天 ${p.count} 張</span>` : ""}</div>
+          ${has ? `<div class="stats">
+              ${big("最新成交" + (p.lastAt ? "　" + when(p.lastAt) : ""), p.last, "main")}
+              ${big("高", p.high)}${big("均", p.avg)}${big("低", p.low)}
+            </div>` : `<div class="empty" style="border:0">這張卡目前沒有 PSA10 的成交紀錄。</div>`}
+          ${has && p.days ? `<div class="note">高／均／低為最近 ${p.count} 筆單張成交（約 ${p.days} 天內）。匯率 1 日圓 ≈ ${rate.toFixed(4)} 台幣。</div>` : ""}
+        </div>
+
+        ${c.chart.length > 1 ? `<div class="panel">
+          <div class="panel-h"><h3 style="font-size:17px">PSA10 價格走勢</h3><span style="font-size:12.5px;color:var(--muted)">每日成交均價（日圓）</span>
+            <div class="ranges" id="ranges">${RANGES.map(r => `<button data-r="${r[0]}">${r[1]}</button>`).join("")}</div></div>
+          <div class="chart" id="chart"><svg role="img" aria-label="PSA10 每日成交均價走勢圖"></svg><div class="tip" id="tip"></div></div>
+        </div>` : ""}
+
+        ${dayList.length ? `<div class="panel">
+          <div class="panel-h"><h3 style="font-size:17px">近期每日成交張數</h3><span style="font-size:12.5px;color:var(--muted)">最近 ${c.trades.length} 筆</span></div>
+          <div class="vol">${dayList.map(d => `<div class="col"><span class="num">${d.n}</span><div class="bar" style="height:${Math.max(4, d.n / maxN * 90)}px" title="${d.label}：${d.n} 張"></div><span class="d num">${d.label}</span></div>`).join("")}</div>
+        </div>` : ""}
+
+        ${c.trades.length ? `<div class="panel">
+          <div class="panel-h"><h3 style="font-size:17px">最近成交明細</h3></div>
+          <table class="tr num"><tr><th>成交時間</th><th>狀態</th><th class="r">台幣</th><th class="r">日圓</th></tr>
+          ${c.trades.map(t => `<tr><td>${when(t.soldAt)}</td><td>PSA10${t.label && t.label !== "1枚" ? " · " + esc(t.label.replace("枚", " 張")) : ""}</td><td class="r"><b>NT$${twd(t.price)}</b></td><td class="r">${yen(t.price)}</td></tr>`).join("")}
+          </table>
+        </div>` : ""}
+      </div>
+    </div>`;
+
+  if (c.chart.length > 1){
+    const spanDays = (c.chart[c.chart.length-1][0] - c.chart[0][0]) / 864e5;
+    let cur = spanDays > 200 ? "6M" : spanDays > 100 ? "3M" : "ALL";
+    const draw = () => {
+      document.querySelectorAll("#ranges button").forEach(b => b.classList.toggle("on", b.dataset.r === cur));
+      const n = RANGES.find(r => r[0] === cur)[2];
+      const end = c.chart[c.chart.length-1][0];
+      let pts = n ? c.chart.filter(x => x[0] >= end - n * 864e5) : c.chart;
+      if (pts.length < 2) pts = c.chart.slice(-2);
+      drawChart($("#chart"), pts);
+    };
+    $("#ranges").addEventListener("click", e => { if (e.target.dataset.r){ cur = e.target.dataset.r; draw(); } });
+    draw();
+    window.addEventListener("resize", draw, {signal: viewAbort.signal});
+  }
+}
+
+/* ── 走勢圖（SVG，單一數列：線＋面積，游標顯示當日數值） ── */
+function niceTicks(lo, hi, n){
+  const raw = (hi - lo) / n || 1, mag = Math.pow(10, Math.floor(Math.log10(raw)));
+  const step = [1, 2, 2.5, 5, 10].map(m => m * mag).find(s => s >= raw);
+  const out = [];
+  for (let v = Math.floor(lo / step) * step; v <= hi + step * 0.999; v += step) out.push(v);
+  return out;
+}
+const short = v => v >= 1e6 ? (v / 1e6).toFixed(v % 1e6 ? 1 : 0) + "M" : v >= 1e4 ? (v / 1e3).toFixed(v % 1e3 ? 1 : 0) + "k" : fmt(v);
+function drawChart(box, pts){
+  const svg = $("svg", box), tip = $(".tip", box);
+  const W = Math.max(320, svg.clientWidth), H = 280, m = {l:50, r:14, t:14, b:26};
+  const xs = pts.map(p => p[0]), ys = pts.map(p => p[1]);
+  const x0 = xs[0], x1 = xs[xs.length-1];
+  let lo = Math.min(...ys), hi = Math.max(...ys);
+  if (lo === hi){ lo *= 0.9; hi *= 1.1; }
+  const pad = (hi - lo) * 0.08;
+  const ticks = niceTicks(Math.max(0, lo - pad), hi + pad, 4);
+  const y0 = ticks[0], y1 = ticks[ticks.length-1];
+  const X = t => m.l + (t - x0) / (x1 - x0 || 1) * (W - m.l - m.r);
+  const Y = v => H - m.b - (v - y0) / (y1 - y0 || 1) * (H - m.t - m.b);
+  const line = pts.map((p, i) => (i ? "L" : "M") + X(p[0]).toFixed(1) + " " + Y(p[1]).toFixed(1)).join("");
+  const area = line + `L${X(x1).toFixed(1)} ${Y(y0)}L${X(x0).toFixed(1)} ${Y(y0)}Z`;
+  const long = (x1 - x0) / 864e5 > 200;
+  const dl = t => { const d = new Date(t); return long ? `${d.getFullYear()}/${d.getMonth()+1}` : `${d.getMonth()+1}/${d.getDate()}`; };
+  const nx = Math.min(6, Math.max(2, Math.floor(W / 130)));
+  const xt = Array.from({length:nx}, (_, i) => x0 + (x1 - x0) * i / (nx - 1));
+  svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+  svg.innerHTML = `
+    ${ticks.map(v => `<line x1="${m.l}" x2="${W - m.r}" y1="${Y(v)}" y2="${Y(v)}" stroke="var(--soft)" stroke-width="1"/>
+      <text x="${m.l - 8}" y="${Y(v) + 4}" text-anchor="end">${short(v)}</text>`).join("")}
+    ${xt.map((t, i) => `<text x="${X(t)}" y="${H - 6}" text-anchor="${i === 0 ? "start" : i === nx - 1 ? "end" : "middle"}">${dl(t)}</text>`).join("")}
+    <path d="${area}" fill="var(--accent)" opacity=".28"/>
+    <path d="${line}" fill="none" stroke="var(--ink)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+    <circle cx="${X(x1)}" cy="${Y(ys[ys.length-1])}" r="4" fill="var(--ink)" stroke="var(--panel)" stroke-width="2"/>
+    <g id="hv" style="display:none"><line y1="${m.t}" y2="${H - m.b}" stroke="var(--ink)" stroke-dasharray="3 3"/>
+      <circle r="5" fill="var(--accent)" stroke="var(--ink)" stroke-width="2"/></g>
+    <rect x="${m.l}" y="0" width="${W - m.l - m.r}" height="${H}" fill="transparent"/>`;
+  const hv = $("#hv", svg), hit = svg.lastElementChild;
+  const move = e => {
+    const r = svg.getBoundingClientRect();
+    const px = (e.clientX - r.left) * (W / r.width);
+    const t = x0 + (px - m.l) / (W - m.l - m.r) * (x1 - x0);
+    let i = 0, best = Infinity;
+    for (let k = 0; k < pts.length; k++){ const d = Math.abs(pts[k][0] - t); if (d < best){ best = d; i = k; } }
+    const cx = X(pts[i][0]), cy = Y(pts[i][1]);
+    hv.style.display = "";
+    hv.firstElementChild.setAttribute("x1", cx); hv.firstElementChild.setAttribute("x2", cx);
+    hv.lastElementChild.setAttribute("cx", cx); hv.lastElementChild.setAttribute("cy", cy);
+    const d = new Date(pts[i][0]);
+    tip.innerHTML = `${d.getFullYear()}/${d.getMonth()+1}/${d.getDate()}<br><b>NT$${twd(pts[i][1])}</b>　${yen(pts[i][1])}`;
+    tip.style.display = "block";
+    const sx = r.width / W, bw = box.clientWidth, tw = tip.offsetWidth;
+    let left = cx * sx + 12 + 14;
+    if (left + tw > bw - 4) left = cx * sx + 12 - tw - 14;
+    tip.style.left = Math.max(4, left) + "px";
+    tip.style.top = Math.max(4, cy * sx - 20) + "px";
+  };
+  hit.addEventListener("pointermove", move);
+  hit.addEventListener("pointerdown", move);
+  hit.addEventListener("pointerleave", () => { hv.style.display = "none"; tip.style.display = "none"; });
+}
+
+/* ── 路由 ── */
+let viewToken = 0, viewAbort = new AbortController();
+function setTab(tab){
+  document.querySelectorAll("#tabs a").forEach(a => a.classList.toggle("on", a.dataset.tab === tab));
+}
+function route(){
+  viewToken++; viewAbort.abort(); viewAbort = new AbortController();
+  const app = $("#app");
+  const h = location.hash.replace(/^#\/?/, "");
+  const [path, qs] = h.split("?");
+  const parts = path.split("/").filter(Boolean);
+  window.scrollTo(0, 0);
+  if (parts[0] === "g" && GAMES[parts[1]]){
+    let q = "";
+    try { q = new URLSearchParams(qs || "").get("q") || ""; } catch(e){}
+    setTab(parts[1]);
+    document.title = `${q ? q + "｜" : ""}${GAMES[parts[1]]}｜卡價 KAKAKU`;
+    return viewGame(app, parts[1], q.trim());
+  }
+  if (parts[0] === "card" && /^\d+$/.test(parts[1] || "")){
+    setTab("");
+    return viewCard(app, +parts[1]);
+  }
+  setTab("home");
+  document.title = "卡價 KAKAKU｜日版 PSA10 查價";
+  viewHome(app);
+}
+
+/* ── 啟動 ── */
+(function boot(){
+  const saved = store.get("theme", null);
+  const dark = saved ? saved === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
+  document.documentElement.dataset.theme = dark ? "dark" : "light";
+  $("#theme").addEventListener("click", () => {
+    const t = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
+    document.documentElement.dataset.theme = t; store.set("theme", t);
+  });
+  window.addEventListener("hashchange", route);
+  api("/api/rate", {}).then(r => {
+    rate = r.rate;
+    $("#rate").textContent = `1 日圓 ≈ ${rate.toFixed(4)} 台幣${r.live ? "" : "（預設值）"}`;
+  }).catch(() => {}).finally(route);
+})();
+</script>
+</body>
+</html>

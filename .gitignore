@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+data/card_meta.json
+data/card_meta.json.tmp
+node_modules/
+.wrangler/
