@@ -209,7 +209,7 @@
 </header>
 
 <main id="app"></main>
-<footer>資料來源：航海王／寶可夢／遊戲王為 SNKRDUNK（スニダン）日版 PSA10 成交紀錄；NBA 球員卡為 Yahoo! 拍賣（日本）PSA10 落札紀錄。台幣為匯率換算，僅供參考。</footer>
+<footer>資料來源：航海王／寶可夢／遊戲王為 SNKRDUNK（スニダン）日版 PSA10 成交紀錄；NBA 球員卡為 MySlabs（美國）PSA10 已售出紀錄。台幣為匯率換算，僅供參考。</footer>
 
 <script>
 "use strict";
@@ -219,7 +219,7 @@ const WORKER_URL = "https://tcg-price-api.tcg-price-api.workers.dev";
 const IS_LOCAL_SERVER = /^(localhost|127\.0\.0\.1)$/.test(location.hostname) && +location.port >= 8765 && +location.port <= 8774;
 const API_BASE = IS_LOCAL_SERVER ? "" : WORKER_URL.replace(/\/+$/, "");
 const TCG = {onepiece:"航海王", pokemon:"寶可夢", yugioh:"遊戲王"};   // 資料來源：SNKRDUNK
-const GAMES = {...TCG, nba:"NBA 球員卡"};                              // NBA 資料來源：Yahoo! 拍賣落札紀錄
+const GAMES = {...TCG, nba:"NBA 球員卡"};                              // NBA 資料來源：MySlabs 已售出紀錄（美金）
 const EXAMPLES = {
   onepiece:["魯夫","索隆","娜美","紅髮傑克","OP05-119"],
   pokemon:["月亮伊布","噴火龍","皮卡丘","莉莉艾","sv8a 217"],
@@ -232,7 +232,7 @@ const PLACEHOLDER = {
   yugioh:"輸入中文卡名或卡號，例如：青眼白龍、QCCU-JP001",
   nba:"輸入球員中文名，可加系列或年份，例如：詹姆斯、柯比 Prizm",
 };
-let rate = 0.21;
+let rate = 0.21, usdRate = 32;
 
 /* ── 小工具 ── */
 const $ = (s, el=document) => el.querySelector(s);
@@ -363,7 +363,7 @@ function wireSearch(initialGame){
           <div><div class="t">${esc(c.zh || c.title)}</div><div class="s">${esc([c.number, c.zh ? c.title : "", c.series].filter(Boolean).join(" · "))}</div></div></div>`).join("");
     }
     if (!h) h = game === "nba"
-      ? `<div class="msg">近期沒有「${esc(q)}」的 PSA10 成交。可以改用英文姓氏（例如 LeBron、Kobe）。</div>`
+      ? `<div class="msg">按 Enter 查「${esc(q)}」的 PSA10 成交（名單外的球員請用英文姓氏，例如 Luka、Shai）。</div>`
       : `<div class="msg">找不到「${esc(q)}」的${GAMES[game]}卡。可以改用卡號（最準）或日文卡名。</div>`;
     drop.innerHTML = h; drop.classList.add("open");
     opts = [...drop.querySelectorAll(".opt")]; act = -1;
@@ -418,7 +418,7 @@ function viewHome(app){
   const viewed = store.get("viewed", []), queries = store.get("queries", []);
   app.innerHTML = `
     <div class="hero">
-      <div class="eyebrow">PSA10 成交行情 · 日本市場</div>
+      <div class="eyebrow">PSA10 成交行情</div>
       <h1>今天，想查哪張卡的價格？</h1>
       ${searchHTML(game, "", true)}
       <div class="hint">打幾個中文字就會跳出對應的卡，點圖片就能看 PSA10 最近成交價與走勢。</div>
@@ -435,7 +435,7 @@ function viewHome(app){
       <div class="blk-h"><h2>${label}熱門卡片</h2><span class="sub">SNKRDUNK 人氣排行</span><a class="more" href="#/g/${g}">看更多 →</a></div>
       <div class="grid" id="hot-${g}">${skeleton(6)}</div></section>`).join("")}
     <section class="blk">
-      <div class="blk-h"><h2>NBA 球員卡最新成交</h2><span class="sub">Yahoo! 拍賣 PSA10 落札</span><a class="more" href="#/g/nba">看更多 →</a></div>
+      <div class="blk-h"><h2>NBA 球員卡最新成交</h2><span class="sub">MySlabs PSA10 已售出（美國）</span><a class="more" href="#/g/nba">看更多 →</a></div>
       <div class="grid" id="hot-nba">${skeleton(6)}</div></section>`;
   wireSearch(game);
   if (viewed.length){
@@ -467,86 +467,73 @@ function viewHome(app){
   })();
 }
 
-/* ── NBA 球員卡（Yahoo! 拍賣 PSA10 落札紀錄：每一筆是一次成交，不是一張固定的卡） ── */
+/* ── NBA 球員卡（MySlabs 已售出紀錄，美金；每一筆是一次成交，不是一張固定的卡） ── */
+const usd = v => v == null ? "—" : "US$" + (v >= 1000 ? fmt(v) : (+v).toFixed(2).replace(/\.00$/, ""));
+const usdTwd = v => v == null ? "—" : fmt(v * usdRate);
+const day = iso => { const [y, m, d] = String(iso).split("-"); return `${y}/${+m}/${+d}`; };
 function saleHTML(x){
-  return `<a class="tile" href="${esc(x.url)}" target="_blank" rel="noopener" title="到 Yahoo! 拍賣看這筆成交">
+  return `<a class="tile" href="${esc(x.url)}" target="_blank" rel="noopener" title="到 MySlabs 看這筆成交">
     <div class="pic sale">${x.image ? `<img src="${esc(x.image)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">` : ""}</div>
     <div class="inf">
       <div class="t" style="-webkit-line-clamp:3;font-weight:500">${esc(x.title)}</div>
-      <div class="s">${when(x.soldAt)} 成交</div>
-      <div class="p"><span class="tag">PSA10</span><b class="num">NT$${twd(x.price)}</b><i class="num" style="flex-basis:100%">${yen(x.price)}</i></div>
+      <div class="s">${day(x.soldAt)} 成交</div>
+      <div class="p"><span class="tag">PSA10</span><b class="num">NT$${usdTwd(x.price)}</b><i class="num" style="flex-basis:100%">${usd(x.price)}</i></div>
     </div></a>`;
 }
 function viewNba(app, q){
   store.set("lastGame", "nba");
   app.innerHTML = `
     <div class="hero small">
-      <div class="eyebrow">PSA10 · eBay 成交連結＋Yahoo! 拍賣落札紀錄（日本）</div>
+      <div class="eyebrow">PSA10 · 美國市場成交價（美金）</div>
       <h1>NBA 球員卡</h1>
       ${searchHTML("nba", q, false)}
       <div class="chips" id="ex">${exampleChips("nba")}</div>
-    </div>
-    <div class="panel" id="ebay" style="display:none">
-      <div class="panel-h"><h3 style="font-size:17px">eBay 實際成交價</h3><span style="font-size:12.5px;color:var(--muted)">NBA 球員卡的主要行情</span>
-        <a class="btn dark" id="ebaybtn" style="margin-left:auto" target="_blank" rel="noopener">到 eBay 看已售出的 PSA 10 ↗</a></div>
-      <div class="note" style="border-top:0">eBay 不開放程式讀取成交紀錄，所以這裡是連結：點開就是 eBay 上這位球員 PSA 10「已售出」的搜尋結果。下方的 Yahoo! 拍賣（日本）成交可當作亞洲市場的參考。</div>
     </div>
     <div id="nsum"></div>
     <section class="blk" style="margin-top:28px">
       <div class="blk-h"><h2>${q ? `「${esc(q)}」的 PSA10 成交` : "最新 PSA10 成交"}</h2><span class="sub" id="cnt"></span></div>
       <div class="chips" id="alts" style="margin:0 0 16px"></div>
       <div class="grid" id="res">${skeleton(12)}</div>
-      <div class="center" id="more"></div>
     </section>`;
   wireSearch("nba");
   const token = viewToken, res = $("#res");
-  let page = 1, all = [];
-  const stat = (k, v, cls="") => `<div class="stat ${cls}"><div class="k">${k}</div><div class="v num">${v == null ? "—" : twd(v)}<small>${v == null ? "" : "TWD"}</small></div><div class="j num">${v == null ? "" : yen(v)}</div></div>`;
-  function summary(){
-    if (!all.length){ $("#nsum").innerHTML = ""; return; }
-    const prices = all.map(x => x.price).sort((a, b) => a - b), n = prices.length;
-    const median = n % 2 ? prices[(n - 1) / 2] : Math.round((prices[n / 2 - 1] + prices[n / 2]) / 2);
-    const days = Math.round((new Date(all[0].soldAt) - new Date(all[n - 1].soldAt)) / 864e5) + 1;
-    $("#nsum").innerHTML = `
+  let all = [], ebayUrl = "";
+  const stat = (k, v, cls="") => `<div class="stat ${cls}"><div class="k">${k}</div><div class="v num">${v == null ? "—" : usdTwd(v)}<small>${v == null ? "" : "TWD"}</small></div><div class="j num">${v == null ? "" : usd(v)}</div></div>`;
+  const ebayBtn = () => ebayUrl ? `<a class="btn dark" href="${esc(ebayUrl)}" target="_blank" rel="noopener" style="padding:4px 16px;font-size:14px">eBay 已售出 ↗</a>` : "";
+  function summary(d){
+    const st = d.stats;
+    $("#nsum").innerHTML = !all.length ? "" : `
       <div class="panel">
-        <div class="panel-h"><span class="pill">Yahoo! 拍賣 PSA 10 近期成交紀錄</span><span class="badge num">${days} 天 ${n} 張</span></div>
-        <div class="stats">${stat("最新成交　" + when(all[0].soldAt), all[0].price, "main")}${stat("高", prices[n - 1])}${stat("中位數", median)}${stat("低", prices[0])}</div>
-        <div class="note">${q ? "這位球員不同年份、不同版本的卡會混在一起，價差很大所以用中位數；想看特定卡請在名字後面加系列或年份（例如「Prizm」「2019」）。" : "所有球員的 PSA10 成交混在一起，僅供瀏覽。"}匯率 1 日圓 ≈ ${rate.toFixed(4)} 台幣。</div>
+        <div class="panel-h"><span class="pill">MySlabs PSA 10 成交紀錄</span><span class="badge num">${all.length} 張</span>${ebayBtn()}</div>
+        <div class="stats">${stat("最新成交　" + day(st.lastAt), st.last, "main")}${stat("高", st.high)}${stat("中位數", st.median)}${stat("低", st.low)}</div>
+        <div class="note">${q ? "同一位球員不同年份、不同版本的卡會列在一起，價差很大所以用中位數；想看特定卡請在名字後面加系列或年份（例如「Prizm」「2019」）。" : "所有球員的 PSA10 成交混在一起，僅供瀏覽。"}成交期間 ${day(all[all.length - 1].soldAt)} – ${day(all[0].soldAt)}。匯率 1 美元 ≈ ${usdRate.toFixed(2)} 台幣。</div>
       </div>
-      ${n > 1 ? `<div class="panel">
-        <div class="panel-h"><h3 style="font-size:17px">PSA10 成交分布</h3><span style="font-size:12.5px;color:var(--muted)">每一點是一筆成交（日圓，對數刻度）</span></div>
+      ${all.length > 1 ? `<div class="panel">
+        <div class="panel-h"><h3 style="font-size:17px">PSA10 成交分布</h3><span style="font-size:12.5px;color:var(--muted)">每一點是一筆成交（美金，對數刻度）</span></div>
         <div class="chart" id="chart"><svg role="img" aria-label="PSA10 成交價格分布圖"></svg><div class="tip" id="tip"></div></div>
       </div>` : ""}`;
-    if (n > 1) drawSales($("#chart"), all);
+    if (all.length > 1) drawSales($("#chart"), all);
   }
-  async function load(){
+  (async () => {
     try {
-      const d = await api("/api/nba", {q, page});
+      const d = await api("/api/nba", {q});
       if (token !== viewToken) return;
-      if (d.ebayUrl){ $("#ebaybtn").href = d.ebayUrl; $("#ebay").style.display = ""; }
-      const have = new Set(all.map(x => x.id));
-      const fresh = d.items.filter(x => !have.has(x.id));
-      all = all.concat(fresh);
-      if (page === 1 && !all.length){
-        res.outerHTML = `<div class="empty">近期沒有「${esc(q)}」的 PSA10 成交紀錄。<br>Yahoo! 拍賣只保留最近幾個月的成交；可以改用英文姓氏，或少打一些條件。</div>`;
+      all = d.items; ebayUrl = d.ebayUrl || "";
+      if (!all.length){
+        res.outerHTML = `<div class="empty">MySlabs 上沒有「${esc(q)}」的 PSA10 成交紀錄。<br>可以改用英文姓氏、少打一些條件，或直接看 eBay 的已售出結果。<div style="margin-top:14px">${ebayBtn()}</div></div>`;
       } else {
-        if (page === 1) res.innerHTML = "";
-        res.insertAdjacentHTML("beforeend", fresh.map(saleHTML).join(""));
+        res.innerHTML = all.map(saleHTML).join("");
       }
-      summary();
-      $("#cnt").textContent = all.length ? `已顯示 ${all.length} 筆 · 點卡片到 Yahoo! 拍賣看原始頁面` : "";
-      if (page === 1 && d.names && d.names.length > 1)
+      summary(d);
+      $("#cnt").textContent = all.length ? `最近 ${all.length} 筆 · 點卡片到 MySlabs 看原始頁面` : "";
+      if (d.names && d.names.length > 1)
         $("#alts").innerHTML = `<span style="align-self:center;font-size:13px;color:var(--muted)">你是不是要找：</span>` +
           d.names.map(n => `<a class="chip" href="#/g/nba?q=${encodeURIComponent(n.zh)}">${esc(n.zh)}<small>${esc(n.ja)}</small></a>`).join("");
-      $("#more").innerHTML = d.hasMore ? `<button class="btn" id="mb">載入更早的成交</button>` : "";
-      if (d.hasMore) $("#mb").addEventListener("click", () => { page++; $("#mb").disabled = true; $("#mb").textContent = "載入中…"; load(); });
     } catch(e){
       if (token !== viewToken) return;
-      if (page === 1) res.outerHTML = `<div class="err">${esc(e.message)}</div>`;
-      else $("#more").innerHTML = `<div class="err">${esc(e.message)}</div>`;
+      res.outerHTML = `<div class="err">${esc(e.message)}</div>`;
     }
-  }
-  load();
+  })();
   window.addEventListener("resize", () => { if ($("#chart") && all.length > 1) drawSales($("#chart"), all); }, {signal: viewAbort.signal});
 }
 
@@ -565,13 +552,14 @@ function drawSales(box, items){
   const Y = v => H - m.b - (Math.log10(v) - y0) / (y1 - y0) * (H - m.t - m.b);
   const nx = Math.min(6, Math.max(2, Math.floor(W / 130)));
   const xt = Array.from({length:nx}, (_, i) => x0 + (x1 - x0) * i / (nx - 1));
-  const dl = t => { const d = new Date(t); return `${d.getMonth()+1}/${d.getDate()}`; };
+  const long = (x1 - x0) / 864e5 > 200;
+  const dl = t => { const d = new Date(t); return long ? `${d.getFullYear()}/${d.getMonth()+1}` : `${d.getMonth()+1}/${d.getDate()}`; };
   svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
   svg.innerHTML = `
     ${ticks.map(v => `<line x1="${m.l}" x2="${W - m.r}" y1="${Y(v)}" y2="${Y(v)}" stroke="var(--soft)" stroke-width="1"/>
-      <text x="${m.l - 8}" y="${Y(v) + 4}" text-anchor="end">${short(v)}</text>`).join("")}
+      <text x="${m.l - 8}" y="${Y(v) + 4}" text-anchor="end">$${short(v)}</text>`).join("")}
     ${xt.map((t, i) => `<text x="${X(t)}" y="${H - 6}" text-anchor="${i === 0 ? "start" : i === nx - 1 ? "end" : "middle"}">${dl(t)}</text>`).join("")}
-    ${pts.map((d, i) => `<circle data-i="${i}" cx="${X(d.t).toFixed(1)}" cy="${Y(d.p).toFixed(1)}" r="5" fill="var(--accent)" stroke="var(--ink)" stroke-width="1.5"/>`).join("")}
+    ${pts.map(d => `<circle cx="${X(d.t).toFixed(1)}" cy="${Y(d.p).toFixed(1)}" r="5" fill="var(--accent)" stroke="var(--ink)" stroke-width="1.5"/>`).join("")}
     <circle id="hv" r="8" fill="none" stroke="var(--ink)" stroke-width="2" style="display:none"/>
     <rect x="0" y="0" width="${W}" height="${H}" fill="transparent"/>`;
   const hv = $("#hv", svg), hit = svg.lastElementChild;
@@ -584,7 +572,7 @@ function drawSales(box, items){
     const cx = X(best.t), cy = Y(best.p);
     hv.style.display = ""; hv.setAttribute("cx", cx); hv.setAttribute("cy", cy);
     const title = best.x.title.length > 44 ? best.x.title.slice(0, 44) + "…" : best.x.title;
-    tip.innerHTML = `${when(best.x.soldAt)}<br><b>NT$${twd(best.p)}</b>　${yen(best.p)}<br>${esc(title)}`;
+    tip.innerHTML = `${day(best.x.soldAt)}<br><b>NT$${usdTwd(best.p)}</b>　${usd(best.p)}<br>${esc(title)}`;
     tip.style.display = "block";
     const sx = r.width / W, bw = box.clientWidth, tw = tip.offsetWidth;
     let left = cx * sx + 12 + 14;
@@ -842,7 +830,7 @@ function route(){
   });
   window.addEventListener("hashchange", route);
   api("/api/rate", {}).then(r => {
-    rate = r.rate;
+    rate = r.rate; if (r.usd) usdRate = r.usd;
     $("#rate").textContent = `1 日圓 ≈ ${rate.toFixed(4)} 台幣${r.live ? "" : "（預設值）"}`;
   }).catch(() => {}).finally(route);
 })();

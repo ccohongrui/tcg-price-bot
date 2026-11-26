@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
-本機 TCG 查價（航海王 / 寶可夢 / 遊戲王）— 只看日版 PSA10
-資料來源：SNKRDUNK（スニダン）成交紀錄
+本機 PSA10 查價（航海王 / 寶可夢 / 遊戲王 / NBA 球員卡）
+資料來源：SNKRDUNK（スニダン）日版成交紀錄；NBA 為 MySlabs 已售出紀錄
 只用 Python 標準函式庫，不需要 pip install。
 
 啟動：python server.py   然後瀏覽器開 http://127.0.0.1:8765
@@ -29,6 +29,7 @@ SEARCH_TTL = 10 * 60         # 搜尋結果快取 10 分鐘
 CARD_TTL = 15 * 60           # 單卡行情快取 15 分鐘
 RATE_TTL = 6 * 60 * 60       # 匯率快取 6 小時
 FALLBACK_JPY_TWD = 0.21      # 抓不到匯率時用這個（可自行修改）
+FALLBACK_USD_TWD = 32.0      # 美金→台幣的備用匯率（NBA 球員卡用）
 REQUEST_GAP = 0.2            # 每個請求之間至少間隔幾秒（對對方伺服器客氣一點）
 PSA10 = "trading_card_single_psa10"
 
@@ -129,10 +130,12 @@ def jpy_to_twd():
                                      headers={"User-Agent": UA})
         with urllib.request.urlopen(req, timeout=8) as r:
             data = json.loads(r.read().decode())
-        rate = {"rate": float(data["rates"]["TWD"]), "source": "open.er-api.com", "live": True}
+        twd = float(data["rates"]["TWD"])
+        rate = {"rate": twd, "usd": round(twd / float(data["rates"]["USD"]), 4),
+                "source": "open.er-api.com", "live": True}
         ttl = RATE_TTL
     except Exception:  # noqa: BLE001
-        rate = {"rate": FALLBACK_JPY_TWD, "source": "預設值（抓不到即時匯率）", "live": False}
+        rate = {"rate": FALLBACK_JPY_TWD, "usd": FALLBACK_USD_TWD, "source": "預設值（抓不到即時匯率）", "live": False}
         ttl = 5 * 60   # 抓失敗只記 5 分鐘，之後再試
     cache.set("rate", rate, ttl)
     return rate
@@ -421,11 +424,17 @@ def card_detail(apparel_id):
     return card
 
 
-# ───────────────────────── NBA 球員卡：Yahoo! 拍賣 PSA10 落札紀錄 ─────────────────────────
-YAHOO = "https://auctions.yahoo.co.jp/closedsearch/closedsearch"
-YAHOO_CATEGORY = 21008            # トレーディングカード > スポーツ > バスケットボール
-NEXT_DATA_RE = re.compile(r'<script id="__NEXT_DATA__"[^>]*>(.*?)</script>', re.S)
+# ───────────────────────── NBA 球員卡：MySlabs 已售出紀錄（美國、美金） ─────────────────────────
+MYSLABS = "https://myslabs.com"
+NBA_TTL = 30 * 60                 # MySlabs 查詢快取 30 分鐘（對方有防爬機制，少打一點）
 PSA10_TITLE_RE = re.compile(r"PSA\s*10", re.I)
+SLAB_SPLIT_RE = re.compile(r'class="slab_item\s')
+SLAB_TITLE_RE = re.compile(r'<div class="slab-title">\s*(.*?)\s*</div>', re.S)
+SLAB_PRICE_RE = re.compile(r'<div class="item-price">\s*\$([\d,]+(?:\.\d+)?)')
+SLAB_DATE_RE = re.compile(r"<small[^>]*>\s*([A-Z][a-z]{2}) (\d{1,2}), (\d{4})\s*</small>")
+SLAB_IMG_RE = re.compile(r'data-src="([^"]+)"')
+SLAB_LINK_RE = re.compile(r'href="(/slab/view/\d+/)"')
+MONTHS = {m: i + 1 for i, m in enumerate("Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec".split())}
 NBA_ENTRIES = [(zh.strip(), kws) for zhs, kws in NAMES.NBA.items() for zh in zhs.split("|")]
 
 
@@ -438,15 +447,20 @@ def nba_suggest(part, limit=8):
         if kws[0] in seen:
             continue
         seen.add(kws[0])
-        out.append({"zh": zh, "ja": " / ".join(kws[:2]), "kws": kws})
+        out.append({"zh": zh, "ja": nba_english(kws), "kws": kws})
         if len(out) >= limit:
             break
     return out
 
 
+def nba_english(kws):
+    """球員的英文名（MySlabs、eBay 都用英文搜尋）"""
+    return next((k for k in kws if k.isascii()), kws[0])
+
+
 def nba_norm(text):
-    """比對標題用：去掉空白與中點、轉小寫（「クリス・ポール」「Chris Paul」寫法不一）"""
-    return re.sub(r"[\s・･.\-]", "", text).lower()
+    """比對標題用：去掉空白與標點、轉小寫"""
+    return re.sub(r"[\s・･.\-']", "", text).lower()
 
 
 def nba_ebay_url(words):
@@ -456,12 +470,12 @@ def nba_ebay_url(words):
 
 
 def nba_resolve(q):
-    """使用者輸入 → (Yahoo 搜尋字串, 球員建議清單, 標題必須符合的條件, eBay 已售出搜尋網址)
+    """使用者輸入 → (英文搜尋字串, 球員建議清單, 標題必須符合的條件)
 
-    條件是「每一組至少符合一個」的清單，用來濾掉 Yahoo 在結果太少時塞進來的不相關商品。"""
+    條件是「每一組至少符合一個」的清單，用來濾掉搜尋結果裡不相關的卡。"""
     tokens = q.split()
     if not tokens:
-        return "PSA10", [], [], nba_ebay_url("basketball")
+        return "basketball", [], []
     part, rest = tokens[0], tokens[1:]
     low = nba_norm(part)
     exact = [e for e in NBA_ENTRIES if e[0].lower() == part.lower()] or \
@@ -470,29 +484,20 @@ def nba_resolve(q):
     kws = exact[0][1] if exact else names[0]["kws"] if names else None
     for n in names:
         n.pop("kws", None)
-    if kws:
-        search = list(dict.fromkeys(k.split(" ")[-1] for k in kws))   # "Chris Paul" → 用 Paul 搜
-        player = "(" + " ".join(search) + ")" if len(search) > 1 else search[0]
-        must = [[nba_norm(k) for k in kws]]
-    else:
-        player, must = part, [[nba_norm(part)]]
+    english = nba_english(kws) if kws else part
+    must = [[nba_norm(k) for k in kws if k.isascii()] or [nba_norm(english)]] if kws else [[nba_norm(part)]]
     must += [[nba_norm(t)] for t in rest]
-    # eBay 用英文搜尋：挑球員的英文名（沒有就用使用者原本打的字）
-    english = next((k for k in (kws or []) if k.isascii()), part)
-    return " ".join(["PSA10", player] + rest), names, must, nba_ebay_url(" ".join([english] + rest))
+    return " ".join([english] + rest), names, must
 
 
 def nba_stats(items):
-    out = {"last": None, "lastAt": None, "high": None, "low": None, "avg": None, "median": None,
-           "count": len(items), "days": 0}
+    out = {"last": None, "lastAt": None, "high": None, "low": None, "median": None, "count": len(items), "days": 0}
     if items:
-        prices = [x["price"] for x in items]
-        srt = sorted(prices)
+        srt = sorted(x["price"] for x in items)
         mid = len(srt) // 2
-        out.update(last=prices[0], lastAt=items[0]["soldAt"], high=srt[-1], low=srt[0],
-                   avg=round(sum(prices) / len(prices)),
-                   median=srt[mid] if len(srt) % 2 else round((srt[mid - 1] + srt[mid]) / 2))
-        days = sorted(x["soldAt"][:10] for x in items)
+        out.update(last=items[0]["price"], lastAt=items[0]["soldAt"], high=srt[-1], low=srt[0],
+                   median=srt[mid] if len(srt) % 2 else round((srt[mid - 1] + srt[mid]) / 2, 2))
+        days = sorted(x["soldAt"] for x in items)
         try:
             span = (time.mktime(time.strptime(days[-1], "%Y-%m-%d")) -
                     time.mktime(time.strptime(days[0], "%Y-%m-%d"))) / 86400
@@ -502,37 +507,36 @@ def nba_stats(items):
     return out
 
 
-def nba_search(q, page=1):
-    keyword, names_, must, ebay = nba_resolve(q)
-    key = f"nba:{page}:{keyword}"
-    res = cache.get(key)
-    if res is None:
-        params = {"p": keyword, "auccat": YAHOO_CATEGORY, "n": 100, "b": (page - 1) * 100 + 1}
-        html_ = http_get(f"{YAHOO}?{urllib.parse.urlencode(params)}", accept="text/html",
-                         referer=None, who="Yahoo! 拍賣")
-        m = NEXT_DATA_RE.search(html_)
-        try:
-            listing = json.loads(m.group(1))["props"]["pageProps"]["initialState"]["search"]["items"]["listing"]
-        except (AttributeError, KeyError, TypeError, ValueError):
-            raise UpstreamError("Yahoo! 拍賣回傳的資料格式不對（可能改版了）")
-        raw = listing.get("items") or []
+def nba_search(q):
+    words, names_, must = nba_resolve(q)
+    key = f"nba:{words}"
+    items = cache.get(key)
+    if items is None:
+        url = f"{MYSLABS}/search/archive/?" + urllib.parse.urlencode({"q": words + " PSA 10"})
+        page = http_get(url, accept="text/html", referer=None, who="MySlabs")
         items = []
-        for x in raw:
-            title = x.get("title") or ""
-            if not x.get("price") or not x.get("endTime") or not PSA10_TITLE_RE.search(title):
-                continue            # 搜尋會比對到商品說明，標題沒寫 PSA10 的不算
+        for block in SLAB_SPLIT_RE.split(page)[1:]:
+            t, p, d = SLAB_TITLE_RE.search(block), SLAB_PRICE_RE.search(block), SLAB_DATE_RE.search(block)
+            if not (t and p and d) or d.group(1) not in MONTHS:
+                continue
+            title = htmllib.unescape(re.sub(r"\s+", " ", t.group(1)))
+            if not PSA10_TITLE_RE.search(title):
+                continue            # 只要 PSA 10
             norm = nba_norm(title)
             if not all(any(alt in norm for alt in group) for group in must):
                 continue            # 標題裡沒有這位球員／關鍵字
-            items.append({"id": x.get("auctionId"), "title": title, "price": int(x["price"]),
-                          "soldAt": x["endTime"], "image": x.get("imageUrl"),
-                          "url": f"https://auctions.yahoo.co.jp/jp/auction/{x.get('auctionId')}"})
+            img, link = SLAB_IMG_RE.search(block), SLAB_LINK_RE.search(block)
+            items.append({
+                "id": link.group(1) if link else title + d.group(0),
+                "title": title, "price": float(p.group(1).replace(",", "")), "currency": "USD",
+                "soldAt": f"{d.group(3)}-{MONTHS[d.group(1)]:02d}-{int(d.group(2)):02d}",
+                "image": htmllib.unescape(img.group(1)) if img else None,
+                "url": MYSLABS + link.group(1) if link else url,
+            })
         items.sort(key=lambda x: x["soldAt"], reverse=True)
-        total = int(listing.get("totalResultsAvailable") or 0)
-        res = {"items": items, "hasMore": bool(items) and page * 100 < total and len(raw) >= 100}
-        cache.set(key, res, SEARCH_TTL)
-    return {"query": q, "keyword": keyword, "names": names_, "page": page, "ebayUrl": ebay,
-            "items": res["items"], "stats": nba_stats(res["items"]), "hasMore": res["hasMore"]}
+        cache.set(key, items, NBA_TTL)
+    return {"query": q, "keyword": words, "names": names_, "ebayUrl": nba_ebay_url(words),
+            "items": items, "stats": nba_stats(items), "hasMore": False}
 
 
 # ───────────────────────── HTTP 伺服器 ─────────────────────────
@@ -585,18 +589,10 @@ class Handler(BaseHTTPRequestHandler):
 
         if u.path in ("/api/nba", "/api/nba/suggest"):
             text = " ".join(arg("q")[:80].split())
-            if u.path == "/api/nba/suggest":
-                keyword, names_, _, _ = nba_resolve(text)
-                try:
-                    items = nba_search(text)["items"][:5]
-                except UpstreamError:
-                    items = []
-                return self._json({"query": text, "keyword": keyword, "names": names_, "items": items})
-            try:
-                page = max(1, min(10, int(arg("page", "1"))))
-            except ValueError:
-                page = 1
-            return self._json(nba_search(text, page))
+            if u.path == "/api/nba/suggest":      # 只回球員名建議，不為了每次打字去打 MySlabs
+                words, names_, _ = nba_resolve(text)
+                return self._json({"query": text, "keyword": words, "names": names_, "items": []})
+            return self._json(nba_search(text))
 
         if u.path in ("/api/search", "/api/suggest", "/api/hot"):
             game = arg("game")

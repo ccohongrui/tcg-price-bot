@@ -222,15 +222,24 @@ async function cardDetail(id, ctx) {
   };
 }
 
-// ───────────── NBA 球員卡：Yahoo! 拍賣 PSA10 落札紀錄 ─────────────
-const YAHOO = "https://auctions.yahoo.co.jp/closedsearch/closedsearch";
-const YAHOO_CATEGORY = "21008";   // トレーディングカード > スポーツ > バスケットボール
-const NEXT_DATA_RE = /<script id="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/;
+// ───────────── NBA 球員卡：MySlabs 已售出紀錄（美國、美金） ─────────────
+const MYSLABS = "https://myslabs.com";
+const NBA_TTL = 30 * 60;          // MySlabs 查詢快取 30 分鐘（對方有防爬機制，少打一點）
+const FALLBACK_USD_TWD = 32;
 const PSA10_TITLE_RE = /PSA\s*10/i;
+const SLAB_TITLE_RE = /<div class="slab-title">\s*([\s\S]*?)\s*<\/div>/;
+const SLAB_PRICE_RE = /<div class="item-price">\s*\$([\d,]+(?:\.\d+)?)/;
+const SLAB_DATE_RE = /<small[^>]*>\s*([A-Z][a-z]{2}) (\d{1,2}), (\d{4})\s*<\/small>/;
+const SLAB_IMG_RE = /data-src="([^"]+)"/;
+const SLAB_LINK_RE = /href="(\/slab\/view\/\d+\/)"/;
+const MONTHS = Object.fromEntries("Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec".split(" ").map((m, i) => [m, i + 1]));
 const NBA_ENTRIES = DATA.nba || [];
-// 比對標題用：去掉空白與中點、轉小寫（「クリス・ポール」「Chris Paul」寫法不一）
-const nbaNorm = s => s.replace(/[\s・･.\-]/g, "").toLowerCase();
+const isAscii = k => /^[ -~]+$/.test(k);
+const nbaEnglish = kws => kws.find(isAscii) || kws[0];   // MySlabs、eBay 都用英文搜尋
+const nbaNorm = s => s.replace(/[\s・･.\-']/g, "").toLowerCase();   // 比對標題用
 const lastWord = k => k.split(" ").pop();
+// eBay「已售出」搜尋頁的網址（只是給使用者點開的連結，Worker 不會去抓 eBay）
+const nbaEbayUrl = words => "https://www.ebay.com/sch/i.html?" + new URLSearchParams({ _nkw: words + " PSA 10", LH_Sold: "1", LH_Complete: "1" });
 
 function nbaSuggest(part, limit = 8) {
   const low = part.toLowerCase();
@@ -241,88 +250,74 @@ function nbaSuggest(part, limit = 8) {
   for (const [zh, kws] of [...starts, ...contains]) {
     if (seen.has(kws[0])) continue;
     seen.add(kws[0]);
-    out.push({ zh, ja: kws.slice(0, 2).join(" / "), kws });
+    out.push({ zh, ja: nbaEnglish(kws), kws });
     if (out.length >= limit) break;
   }
   return out;
 }
 
-// eBay「已售出」搜尋頁的網址（只是給使用者點開的連結，Worker 不會去抓 eBay）
-const nbaEbayUrl = words => "https://www.ebay.com/sch/i.html?" + new URLSearchParams({ _nkw: words + " PSA 10", LH_Sold: "1", LH_Complete: "1" });
-
-// 使用者輸入 → { Yahoo 搜尋字串, 球員建議清單, 標題必須符合的條件（每一組至少符合一個） }
+// 使用者輸入 → { 英文搜尋字串, 球員建議清單, 標題必須符合的條件（每一組至少符合一個） }
 function nbaResolve(q) {
   const tokens = q.split(/\s+/).filter(Boolean);
-  if (!tokens.length) return { keyword: "PSA10", names: [], must: [], ebayUrl: nbaEbayUrl("basketball") };
+  if (!tokens.length) return { words: "basketball", names: [], must: [] };
   const part = tokens[0], rest = tokens.slice(1), low = nbaNorm(part);
   let exact = NBA_ENTRIES.filter(e => e[0].toLowerCase() === part.toLowerCase());
   if (!exact.length) exact = NBA_ENTRIES.filter(e => e[1].some(k => low === nbaNorm(k) || low === lastWord(k).toLowerCase()));
   const sugg = HAN.test(part) || exact.length ? nbaSuggest(part) : [];
   const kws = exact.length ? exact[0][1] : sugg.length ? sugg[0].kws : null;
   const names = sugg.map(({ zh, ja }) => ({ zh, ja }));
-  let player, must;
-  if (kws) {
-    const search = [...new Set(kws.map(lastWord))];   // "Chris Paul" → 用 Paul 搜
-    player = search.length > 1 ? "(" + search.join(" ") + ")" : search[0];
-    must = [kws.map(nbaNorm)];
-  } else {
-    player = part;
-    must = [[nbaNorm(part)]];
-  }
+  const english = kws ? nbaEnglish(kws) : part;
+  const ascii = kws ? kws.filter(isAscii).map(nbaNorm) : [];
+  const must = [kws ? (ascii.length ? ascii : [nbaNorm(english)]) : [nbaNorm(part)]];
   for (const t of rest) must.push([nbaNorm(t)]);
-  // eBay 用英文搜尋：挑球員的英文名（沒有就用使用者原本打的字）
-  const english = (kws || []).find(k => /^[ -~]+$/.test(k)) || part;
-  return { keyword: ["PSA10", player, ...rest].join(" "), names, must, ebayUrl: nbaEbayUrl([english, ...rest].join(" ")) };
+  return { words: [english, ...rest].join(" "), names, must };
 }
 
 function nbaStats(items) {
-  const out = { last: null, lastAt: null, high: null, low: null, avg: null, median: null, count: items.length, days: 0 };
+  const out = { last: null, lastAt: null, high: null, low: null, median: null, count: items.length, days: 0 };
   if (items.length) {
-    const prices = items.map(x => x.price), srt = [...prices].sort((a, b) => a - b), mid = srt.length >> 1;
+    const srt = items.map(x => x.price).sort((a, b) => a - b), mid = srt.length >> 1;
     Object.assign(out, {
-      last: prices[0], lastAt: items[0].soldAt, high: srt[srt.length - 1], low: srt[0],
-      avg: Math.round(prices.reduce((a, b) => a + b, 0) / prices.length),
-      median: srt.length % 2 ? srt[mid] : Math.round((srt[mid - 1] + srt[mid]) / 2),
+      last: items[0].price, lastAt: items[0].soldAt, high: srt[srt.length - 1], low: srt[0],
+      median: srt.length % 2 ? srt[mid] : Math.round((srt[mid - 1] + srt[mid]) * 50) / 100,
     });
-    const days = items.map(x => x.soldAt.slice(0, 10)).sort();
+    const days = items.map(x => x.soldAt).sort();
     const span = (Date.parse(days[days.length - 1]) - Date.parse(days[0])) / 864e5;
     if (Number.isFinite(span)) out.days = Math.round(span) + 1;
   }
   return out;
 }
 
-async function nbaSearch(q, page, ctx) {
-  const { keyword, names, must, ebayUrl } = nbaResolve(q);
-  const params = new URLSearchParams({ p: keyword, auccat: YAHOO_CATEGORY, n: "100", b: String((page - 1) * 100 + 1) });
-  const html = await cachedFetch(`${YAHOO}?${params}`, { ttl: SEARCH_TTL, accept: "text/html", ctx, who: "Yahoo! 拍賣" });
-  let listing;
-  try {
-    listing = JSON.parse(NEXT_DATA_RE.exec(html)[1]).props.pageProps.initialState.search.items.listing;
-  } catch (e) {
-    throw new UpstreamError("Yahoo! 拍賣回傳的資料格式不對（可能改版了）");
-  }
-  const raw = listing.items || [];
+async function nbaSearch(q, ctx) {
+  const { words, names, must } = nbaResolve(q);
+  const url = `${MYSLABS}/search/archive/?` + new URLSearchParams({ q: words + " PSA 10" });
+  const html = await cachedFetch(url, { ttl: NBA_TTL, accept: "text/html", ctx, who: "MySlabs" });
   const items = [];
-  for (const x of raw) {
-    const title = x.title || "";
-    if (!x.price || !x.endTime || !PSA10_TITLE_RE.test(title)) continue;   // 標題沒寫 PSA10 的不算
+  for (const block of html.split(/class="slab_item\s/).slice(1)) {
+    const t = SLAB_TITLE_RE.exec(block), p = SLAB_PRICE_RE.exec(block), d = SLAB_DATE_RE.exec(block);
+    if (!t || !p || !d || !MONTHS[d[1]]) continue;
+    const title = unescapeHtml(t[1].replace(/\s+/g, " "));
+    if (!PSA10_TITLE_RE.test(title)) continue;                                   // 只要 PSA 10
     const norm = nbaNorm(title);
     if (!must.every(group => group.some(alt => norm.includes(alt)))) continue;   // 標題裡沒有這位球員／關鍵字
-    items.push({ id: x.auctionId, title, price: Math.round(x.price), soldAt: x.endTime, image: x.imageUrl || null,
-                 url: `https://auctions.yahoo.co.jp/jp/auction/${x.auctionId}` });
+    const img = SLAB_IMG_RE.exec(block), link = SLAB_LINK_RE.exec(block);
+    items.push({
+      id: link ? link[1] : title + d[0], title, price: parseFloat(p[1].replace(/,/g, "")), currency: "USD",
+      soldAt: `${d[3]}-${String(MONTHS[d[1]]).padStart(2, "0")}-${d[2].padStart(2, "0")}`,
+      image: img ? unescapeHtml(img[1]) : null, url: link ? MYSLABS + link[1] : url,
+    });
   }
   items.sort((a, b) => b.soldAt.localeCompare(a.soldAt));
-  const total = Number(listing.totalResultsAvailable) || 0;
-  return { query: q, keyword, names, page, ebayUrl, items, stats: nbaStats(items),
-           hasMore: items.length > 0 && page * 100 < total && raw.length >= 100 };
+  return { query: q, keyword: words, names, ebayUrl: nbaEbayUrl(words), items, stats: nbaStats(items), hasMore: false };
 }
 
 async function rate(ctx) {
   try {
     const d = JSON.parse(await cachedFetch("https://open.er-api.com/v6/latest/JPY", { ttl: RATE_TTL, ctx }));
-    return { rate: Number(d.rates.TWD), source: "open.er-api.com", live: true };
+    const twd = Number(d.rates.TWD);
+    return { rate: twd, usd: Math.round(twd / Number(d.rates.USD) * 1e4) / 1e4, source: "open.er-api.com", live: true };
   } catch (e) {
-    return { rate: FALLBACK_JPY_TWD, source: "預設值（抓不到即時匯率）", live: false };
+    return { rate: FALLBACK_JPY_TWD, usd: FALLBACK_USD_TWD, source: "預設值（抓不到即時匯率）", live: false };
   }
 }
 
@@ -342,14 +337,11 @@ async function route(url, ctx) {
   if (p === "/api/rate") return [await rate(ctx), 200];
   if (p === "/api/nba" || p === "/api/nba/suggest") {
     const text = arg("q").slice(0, 80).split(/\s+/).filter(Boolean).join(" ");
-    if (p === "/api/nba/suggest") {
-      const { keyword, names } = nbaResolve(text);
-      let items = [];
-      try { items = (await nbaSearch(text, 1, ctx)).items.slice(0, 5); } catch (e) { if (!(e instanceof UpstreamError)) throw e; }
-      return [{ query: text, keyword, names, items }, 200];
+    if (p === "/api/nba/suggest") {       // 只回球員名建議，不為了每次打字去打 MySlabs
+      const { words, names } = nbaResolve(text);
+      return [{ query: text, keyword: words, names, items: [] }, 200];
     }
-    const page = Math.max(1, Math.min(10, parseInt(arg("page", "1"), 10) || 1));
-    return [await nbaSearch(text, page, ctx), 200];
+    return [await nbaSearch(text, ctx), 200];
   }
   if (p === "/api/search" || p === "/api/suggest" || p === "/api/hot") {
     const game = arg("game");
