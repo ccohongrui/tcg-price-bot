@@ -212,7 +212,7 @@
 "use strict";
 /* 放在 GitHub Pages 等靜態空間時，資料改向這支 Cloudflare Worker 要（部署後填入網址）。
    用 start.bat 在本機開（埠號 8765 起）時不會用到它。 */
-const WORKER_URL = "";
+const WORKER_URL = "https://tcg-price-api.tcg-price-api.workers.dev";
 const IS_LOCAL_SERVER = /^(localhost|127\.0\.0\.1)$/.test(location.hostname) && +location.port >= 8765 && +location.port <= 8774;
 const API_BASE = IS_LOCAL_SERVER ? "" : WORKER_URL.replace(/\/+$/, "");
 const GAMES = {onepiece:"航海王", pokemon:"寶可夢", yugioh:"遊戲王"};
