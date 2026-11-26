@@ -80,8 +80,8 @@ class UpstreamError(Exception):
     pass
 
 
-def http_get(url, accept="application/json", timeout=15):
-    """對 SNKRDUNK 發請求，含簡單節流。"""
+def http_get(url, accept="application/json", timeout=15, referer=BASE + "/", who="SNKRDUNK"):
+    """對資料來源發請求，含簡單節流。"""
     with _throttle_lock:
         wait = _last_request[0] + REQUEST_GAP - time.time()
         if wait > 0:
@@ -91,17 +91,17 @@ def http_get(url, accept="application/json", timeout=15):
         "User-Agent": UA,
         "Accept": accept,
         "Accept-Language": "ja,zh-TW;q=0.9,en;q=0.8",
-        "Referer": BASE + "/",
+        **({"Referer": referer} if referer else {}),
     })
     try:
         with urllib.request.urlopen(req, timeout=timeout) as r:
             return r.read().decode("utf-8", errors="replace")
     except urllib.error.HTTPError as e:
         if e.code == 404:
-            raise UpstreamError("SNKRDUNK 找不到這張卡")
-        raise UpstreamError(f"SNKRDUNK 回應 HTTP {e.code}，請稍後再試")
+            raise UpstreamError(f"{who} 找不到這筆資料")
+        raise UpstreamError(f"{who} 回應 HTTP {e.code}，請稍後再試")
     except (urllib.error.URLError, OSError) as e:
-        raise UpstreamError(f"連不到 SNKRDUNK：{getattr(e, 'reason', e)}")
+        raise UpstreamError(f"連不到 {who}：{getattr(e, 'reason', e)}")
 
 
 def get_json(url):
@@ -421,6 +421,112 @@ def card_detail(apparel_id):
     return card
 
 
+# ───────────────────────── NBA 球員卡：Yahoo! 拍賣 PSA10 落札紀錄 ─────────────────────────
+YAHOO = "https://auctions.yahoo.co.jp/closedsearch/closedsearch"
+YAHOO_CATEGORY = 21008            # トレーディングカード > スポーツ > バスケットボール
+NEXT_DATA_RE = re.compile(r'<script id="__NEXT_DATA__"[^>]*>(.*?)</script>', re.S)
+PSA10_TITLE_RE = re.compile(r"PSA\s*10", re.I)
+NBA_ENTRIES = [(zh.strip(), kws) for zhs, kws in NAMES.NBA.items() for zh in zhs.split("|")]
+
+
+def nba_suggest(part, limit=8):
+    low = part.lower()
+    starts = [e for e in NBA_ENTRIES if e[0].lower().startswith(low)]
+    contains = [e for e in NBA_ENTRIES if low in e[0].lower() and e not in starts]
+    seen, out = set(), []
+    for zh, kws in sorted(starts, key=lambda e: len(e[0])) + sorted(contains, key=lambda e: len(e[0])):
+        if kws[0] in seen:
+            continue
+        seen.add(kws[0])
+        out.append({"zh": zh, "ja": " / ".join(kws[:2]), "kws": kws})
+        if len(out) >= limit:
+            break
+    return out
+
+
+def nba_norm(text):
+    """比對標題用：去掉空白與中點、轉小寫（「クリス・ポール」「Chris Paul」寫法不一）"""
+    return re.sub(r"[\s・･.\-]", "", text).lower()
+
+
+def nba_resolve(q):
+    """使用者輸入 → (Yahoo 搜尋字串, 球員建議清單, 標題必須符合的條件)
+
+    條件是「每一組至少符合一個」的清單，用來濾掉 Yahoo 在結果太少時塞進來的不相關商品。"""
+    tokens = q.split()
+    if not tokens:
+        return "PSA10", [], []
+    part, rest = tokens[0], tokens[1:]
+    low = nba_norm(part)
+    exact = [e for e in NBA_ENTRIES if e[0].lower() == part.lower()] or \
+            [e for e in NBA_ENTRIES if any(low in (nba_norm(k), k.split(" ")[-1].lower()) for k in e[1])]
+    names = nba_suggest(part) if (HAN_RE.search(part) or exact) else []
+    kws = exact[0][1] if exact else names[0]["kws"] if names else None
+    for n in names:
+        n.pop("kws", None)
+    if kws:
+        search = list(dict.fromkeys(k.split(" ")[-1] for k in kws))   # "Chris Paul" → 用 Paul 搜
+        player = "(" + " ".join(search) + ")" if len(search) > 1 else search[0]
+        must = [[nba_norm(k) for k in kws]]
+    else:
+        player, must = part, [[nba_norm(part)]]
+    must += [[nba_norm(t)] for t in rest]
+    return " ".join(["PSA10", player] + rest), names, must
+
+
+def nba_stats(items):
+    out = {"last": None, "lastAt": None, "high": None, "low": None, "avg": None, "median": None,
+           "count": len(items), "days": 0}
+    if items:
+        prices = [x["price"] for x in items]
+        srt = sorted(prices)
+        mid = len(srt) // 2
+        out.update(last=prices[0], lastAt=items[0]["soldAt"], high=srt[-1], low=srt[0],
+                   avg=round(sum(prices) / len(prices)),
+                   median=srt[mid] if len(srt) % 2 else round((srt[mid - 1] + srt[mid]) / 2))
+        days = sorted(x["soldAt"][:10] for x in items)
+        try:
+            span = (time.mktime(time.strptime(days[-1], "%Y-%m-%d")) -
+                    time.mktime(time.strptime(days[0], "%Y-%m-%d"))) / 86400
+            out["days"] = int(round(span)) + 1
+        except ValueError:
+            pass
+    return out
+
+
+def nba_search(q, page=1):
+    keyword, names_, must = nba_resolve(q)
+    key = f"nba:{page}:{keyword}"
+    res = cache.get(key)
+    if res is None:
+        params = {"p": keyword, "auccat": YAHOO_CATEGORY, "n": 100, "b": (page - 1) * 100 + 1}
+        html_ = http_get(f"{YAHOO}?{urllib.parse.urlencode(params)}", accept="text/html",
+                         referer=None, who="Yahoo! 拍賣")
+        m = NEXT_DATA_RE.search(html_)
+        try:
+            listing = json.loads(m.group(1))["props"]["pageProps"]["initialState"]["search"]["items"]["listing"]
+        except (AttributeError, KeyError, TypeError, ValueError):
+            raise UpstreamError("Yahoo! 拍賣回傳的資料格式不對（可能改版了）")
+        raw = listing.get("items") or []
+        items = []
+        for x in raw:
+            title = x.get("title") or ""
+            if not x.get("price") or not x.get("endTime") or not PSA10_TITLE_RE.search(title):
+                continue            # 搜尋會比對到商品說明，標題沒寫 PSA10 的不算
+            norm = nba_norm(title)
+            if not all(any(alt in norm for alt in group) for group in must):
+                continue            # 標題裡沒有這位球員／關鍵字
+            items.append({"id": x.get("auctionId"), "title": title, "price": int(x["price"]),
+                          "soldAt": x["endTime"], "image": x.get("imageUrl"),
+                          "url": f"https://auctions.yahoo.co.jp/jp/auction/{x.get('auctionId')}"})
+        items.sort(key=lambda x: x["soldAt"], reverse=True)
+        total = int(listing.get("totalResultsAvailable") or 0)
+        res = {"items": items, "hasMore": bool(items) and page * 100 < total and len(raw) >= 100}
+        cache.set(key, res, SEARCH_TTL)
+    return {"query": q, "keyword": keyword, "names": names_, "page": page,
+            "items": res["items"], "stats": nba_stats(res["items"]), "hasMore": res["hasMore"]}
+
+
 # ───────────────────────── HTTP 伺服器 ─────────────────────────
 class Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
@@ -468,6 +574,21 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(204, b"", "image/x-icon")
         if u.path == "/api/rate":
             return self._json(jpy_to_twd())
+
+        if u.path in ("/api/nba", "/api/nba/suggest"):
+            text = " ".join(arg("q")[:80].split())
+            if u.path == "/api/nba/suggest":
+                keyword, names_, _ = nba_resolve(text)
+                try:
+                    items = nba_search(text)["items"][:5]
+                except UpstreamError:
+                    items = []
+                return self._json({"query": text, "keyword": keyword, "names": names_, "items": items})
+            try:
+                page = max(1, min(10, int(arg("page", "1"))))
+            except ValueError:
+                page = 1
+            return self._json(nba_search(text, page))
 
         if u.path in ("/api/search", "/api/suggest", "/api/hot"):
             game = arg("game")

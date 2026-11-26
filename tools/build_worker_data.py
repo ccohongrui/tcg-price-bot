@@ -26,6 +26,7 @@ out = {
     },
     "modifiers": N.MODIFIERS,
     "display": N.DISPLAY,
+    "nba": [[zh.strip(), kws] for zhs, kws in N.NBA.items() for zh in zhs.split("|")],
 }
 dst = os.path.join(ROOT, "worker", "src", "data.json")
 with open(dst, "w", encoding="utf-8") as f:

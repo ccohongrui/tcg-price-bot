@@ -21,7 +21,7 @@ const BRAND_TO_GAME = Object.fromEntries(Object.entries(GAMES).map(([k, v]) => [
 class UpstreamError extends Error {}
 
 // ───────────── 快取過的對外請求 ─────────────
-async function cachedFetch(url, { ttl, accept = "application/json", ctx, headers = {} }) {
+async function cachedFetch(url, { ttl, accept = "application/json", ctx, headers = {}, who = "SNKRDUNK" }) {
   const cache = caches.default;
   const key = new Request("https://cache.internal/" + encodeURIComponent(url));
   const hit = await cache.match(key);
@@ -34,8 +34,8 @@ async function cachedFetch(url, { ttl, accept = "application/json", ctx, headers
   } catch (e) {
     throw new UpstreamError("連不到資料來源：" + e.message);
   }
-  if (res.status === 404) throw new UpstreamError("SNKRDUNK 找不到這張卡");
-  if (!res.ok) throw new UpstreamError(`SNKRDUNK 回應 HTTP ${res.status}，請稍後再試`);
+  if (res.status === 404) throw new UpstreamError(`${who} 找不到這筆資料`);
+  if (!res.ok) throw new UpstreamError(`${who} 回應 HTTP ${res.status}，請稍後再試`);
   const text = await res.text();
   const put = cache.put(key, new Response(text, { headers: { "Cache-Control": `max-age=${ttl}` } }));
   ctx ? ctx.waitUntil(put) : await put;
@@ -222,6 +222,96 @@ async function cardDetail(id, ctx) {
   };
 }
 
+// ───────────── NBA 球員卡：Yahoo! 拍賣 PSA10 落札紀錄 ─────────────
+const YAHOO = "https://auctions.yahoo.co.jp/closedsearch/closedsearch";
+const YAHOO_CATEGORY = "21008";   // トレーディングカード > スポーツ > バスケットボール
+const NEXT_DATA_RE = /<script id="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/;
+const PSA10_TITLE_RE = /PSA\s*10/i;
+const NBA_ENTRIES = DATA.nba || [];
+// 比對標題用：去掉空白與中點、轉小寫（「クリス・ポール」「Chris Paul」寫法不一）
+const nbaNorm = s => s.replace(/[\s・･.\-]/g, "").toLowerCase();
+const lastWord = k => k.split(" ").pop();
+
+function nbaSuggest(part, limit = 8) {
+  const low = part.toLowerCase();
+  const byLen = (a, b) => a[0].length - b[0].length;
+  const starts = NBA_ENTRIES.filter(e => e[0].toLowerCase().startsWith(low)).sort(byLen);
+  const contains = NBA_ENTRIES.filter(e => e[0].toLowerCase().includes(low) && !starts.includes(e)).sort(byLen);
+  const seen = new Set(), out = [];
+  for (const [zh, kws] of [...starts, ...contains]) {
+    if (seen.has(kws[0])) continue;
+    seen.add(kws[0]);
+    out.push({ zh, ja: kws.slice(0, 2).join(" / "), kws });
+    if (out.length >= limit) break;
+  }
+  return out;
+}
+
+// 使用者輸入 → { Yahoo 搜尋字串, 球員建議清單, 標題必須符合的條件（每一組至少符合一個） }
+function nbaResolve(q) {
+  const tokens = q.split(/\s+/).filter(Boolean);
+  if (!tokens.length) return { keyword: "PSA10", names: [], must: [] };
+  const part = tokens[0], rest = tokens.slice(1), low = nbaNorm(part);
+  let exact = NBA_ENTRIES.filter(e => e[0].toLowerCase() === part.toLowerCase());
+  if (!exact.length) exact = NBA_ENTRIES.filter(e => e[1].some(k => low === nbaNorm(k) || low === lastWord(k).toLowerCase()));
+  const sugg = HAN.test(part) || exact.length ? nbaSuggest(part) : [];
+  const kws = exact.length ? exact[0][1] : sugg.length ? sugg[0].kws : null;
+  const names = sugg.map(({ zh, ja }) => ({ zh, ja }));
+  let player, must;
+  if (kws) {
+    const search = [...new Set(kws.map(lastWord))];   // "Chris Paul" → 用 Paul 搜
+    player = search.length > 1 ? "(" + search.join(" ") + ")" : search[0];
+    must = [kws.map(nbaNorm)];
+  } else {
+    player = part;
+    must = [[nbaNorm(part)]];
+  }
+  for (const t of rest) must.push([nbaNorm(t)]);
+  return { keyword: ["PSA10", player, ...rest].join(" "), names, must };
+}
+
+function nbaStats(items) {
+  const out = { last: null, lastAt: null, high: null, low: null, avg: null, median: null, count: items.length, days: 0 };
+  if (items.length) {
+    const prices = items.map(x => x.price), srt = [...prices].sort((a, b) => a - b), mid = srt.length >> 1;
+    Object.assign(out, {
+      last: prices[0], lastAt: items[0].soldAt, high: srt[srt.length - 1], low: srt[0],
+      avg: Math.round(prices.reduce((a, b) => a + b, 0) / prices.length),
+      median: srt.length % 2 ? srt[mid] : Math.round((srt[mid - 1] + srt[mid]) / 2),
+    });
+    const days = items.map(x => x.soldAt.slice(0, 10)).sort();
+    const span = (Date.parse(days[days.length - 1]) - Date.parse(days[0])) / 864e5;
+    if (Number.isFinite(span)) out.days = Math.round(span) + 1;
+  }
+  return out;
+}
+
+async function nbaSearch(q, page, ctx) {
+  const { keyword, names, must } = nbaResolve(q);
+  const params = new URLSearchParams({ p: keyword, auccat: YAHOO_CATEGORY, n: "100", b: String((page - 1) * 100 + 1) });
+  const html = await cachedFetch(`${YAHOO}?${params}`, { ttl: SEARCH_TTL, accept: "text/html", ctx, who: "Yahoo! 拍賣" });
+  let listing;
+  try {
+    listing = JSON.parse(NEXT_DATA_RE.exec(html)[1]).props.pageProps.initialState.search.items.listing;
+  } catch (e) {
+    throw new UpstreamError("Yahoo! 拍賣回傳的資料格式不對（可能改版了）");
+  }
+  const raw = listing.items || [];
+  const items = [];
+  for (const x of raw) {
+    const title = x.title || "";
+    if (!x.price || !x.endTime || !PSA10_TITLE_RE.test(title)) continue;   // 標題沒寫 PSA10 的不算
+    const norm = nbaNorm(title);
+    if (!must.every(group => group.some(alt => norm.includes(alt)))) continue;   // 標題裡沒有這位球員／關鍵字
+    items.push({ id: x.auctionId, title, price: Math.round(x.price), soldAt: x.endTime, image: x.imageUrl || null,
+                 url: `https://auctions.yahoo.co.jp/jp/auction/${x.auctionId}` });
+  }
+  items.sort((a, b) => b.soldAt.localeCompare(a.soldAt));
+  const total = Number(listing.totalResultsAvailable) || 0;
+  return { query: q, keyword, names, page, items, stats: nbaStats(items),
+           hasMore: items.length > 0 && page * 100 < total && raw.length >= 100 };
+}
+
 async function rate(ctx) {
   try {
     const d = JSON.parse(await cachedFetch("https://open.er-api.com/v6/latest/JPY", { ttl: RATE_TTL, ctx }));
@@ -245,6 +335,17 @@ async function route(url, ctx) {
   const p = url.pathname;
   if (p === "/" || p === "") return [{ ok: true, service: "tcg-price-api" }, 200];
   if (p === "/api/rate") return [await rate(ctx), 200];
+  if (p === "/api/nba" || p === "/api/nba/suggest") {
+    const text = arg("q").slice(0, 80).split(/\s+/).filter(Boolean).join(" ");
+    if (p === "/api/nba/suggest") {
+      const { keyword, names } = nbaResolve(text);
+      let items = [];
+      try { items = (await nbaSearch(text, 1, ctx)).items.slice(0, 5); } catch (e) { if (!(e instanceof UpstreamError)) throw e; }
+      return [{ query: text, keyword, names, items }, 200];
+    }
+    const page = Math.max(1, Math.min(10, parseInt(arg("page", "1"), 10) || 1));
+    return [await nbaSearch(text, page, ctx), 200];
+  }
   if (p === "/api/search" || p === "/api/suggest" || p === "/api/hot") {
     const game = arg("game");
     if (!GAMES[game]) return [{ error: "請先選擇卡種" }, 400];
