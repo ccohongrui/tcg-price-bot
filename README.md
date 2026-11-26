@@ -55,3 +55,20 @@ Mac / Linux：在資料夾裡執行 `python3 server.py`。
 - SNKRDUNK 改版時搜尋或 API 可能會失效，畫面會顯示錯誤訊息
 - 匯率來自 open.er-api.com，僅供參考
 - `data/card_meta.json` 是自動產生的卡片基本資料快取，刪掉也沒關係
+
+## 線上版（GitHub Pages＋Cloudflare Worker）
+
+- 網站：https://ccohongrui.github.io/tcg-price-bot/ （`index.html`，推到 `main` 分支就會自動更新）
+- 後端：https://tcg-price-api.tcg-price-api.workers.dev （`worker/` 資料夾，功能等同 `server.py`）
+
+GitHub Pages 只能放靜態檔案，所以線上版的資料由 Cloudflare Worker 代抓；用 `start.bat` 在本機開時則走 `server.py`，兩邊互不影響。
+
+更新方式：
+
+| 改了什麼 | 要做什麼 |
+|---|---|
+| `index.html` | `git add -A && git commit -m "..." && git push` |
+| `worker/src/index.js` | 在 `worker` 資料夾執行 `npx wrangler deploy` |
+| `names.py`（中文卡名） | 先 `python tools/build_worker_data.py`，再 `npx wrangler deploy` |
+
+Worker 只接受來自 `https://ccohongrui.github.io` 與本機（localhost / 127.0.0.1）網頁的請求，要加其他網址請改 `worker/wrangler.toml` 的 `ALLOWED_ORIGINS`。
